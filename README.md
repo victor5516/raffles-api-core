@@ -31,6 +31,17 @@
 $ npm install
 ```
 
+## S3 uploads configuration
+
+This backend uploads raffle/purchase images to S3 and stores **only the S3 object key** (not a public URL).
+
+Required environment variables:
+
+- `AWS_REGION`
+- `S3_BUCKET`
+
+Credentials are read by the AWS SDK via standard env vars (for example `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) or any other default AWS credential provider supported in your environment.
+
 ## Compile and run the project
 
 ```bash

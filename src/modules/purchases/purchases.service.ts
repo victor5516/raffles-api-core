@@ -12,6 +12,7 @@ import { Customer } from 'src/modules/customers/entities/customer.entity';
 import { Raffle } from 'src/modules/raffles/entities/raffle.entity';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
+import { S3Service } from '../../common/s3/s3.service';
 
 @Injectable()
 export class PurchasesService {
@@ -25,9 +26,13 @@ export class PurchasesService {
     @InjectRepository(Raffle)
     private raffleRepository: Repository<Raffle>,
     private dataSource: DataSource,
+    private readonly s3Service: S3Service,
   ) {}
 
-  async create(createDto: CreatePurchaseDto) {
+  async create(
+    createDto: CreatePurchaseDto,
+    file: Express.Multer.File | undefined,
+  ) {
     return this.dataSource.transaction(async (manager) => {
       // 1. Handle Customer
       const { customer: customerData, ...purchaseData } = createDto;
@@ -53,12 +58,23 @@ export class PurchasesService {
         customerEntity = await manager.save(Customer, newCustomer);
       }
 
+      const date = new Date();
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+
+      const { key } = await this.s3Service.uploadBuffer({
+        keyPrefix: `purchases/${purchaseData.raffleId}/${year}/${month}`,
+        originalName: file.originalname,
+        buffer: file.buffer,
+        contentType: file.mimetype,
+      });
+
       // 2. Create Purchase
       const purchase = manager.create(Purchase, {
         raffleId: purchaseData.raffleId,
         paymentMethodId: purchaseData.paymentMethodId,
         ticketQuantity: purchaseData.ticket_quantity,
-        paymentScreenshotUrl: purchaseData.payment_screenshot_url,
+        paymentScreenshotUrl: key,
         bankReference: purchaseData.bank_reference,
         customerId: customerEntity.uid,
       });
@@ -152,15 +168,29 @@ export class PurchasesService {
     });
   }
 
-  async findAll(query: any) {
-    const {
-      raffleId,
-      status,
-      nationalId,
-      ticketNumber,
-      page = 1,
-      limit = 20,
-    } = query;
+  async findAll(query: Record<string, unknown>) {
+    const raffleId =
+      typeof query.raffleId === 'string' ? query.raffleId : undefined;
+    const status = typeof query.status === 'string' ? query.status : undefined;
+    const nationalId =
+      typeof query.nationalId === 'string' ? query.nationalId : undefined;
+    const ticketNumberRaw = query.ticketNumber;
+    const ticketNumber =
+      typeof ticketNumberRaw === 'string' || typeof ticketNumberRaw === 'number'
+        ? Number(ticketNumberRaw)
+        : undefined;
+
+    const pageRaw = query.page;
+    const limitRaw = query.limit;
+    const page =
+      typeof pageRaw === 'string' || typeof pageRaw === 'number'
+        ? Math.max(1, Number(pageRaw))
+        : 1;
+    const limit =
+      typeof limitRaw === 'string' || typeof limitRaw === 'number'
+        ? Math.max(1, Number(limitRaw))
+        : 20;
+
     const skip = (page - 1) * limit;
 
     const qb = this.purchaseRepository
@@ -183,7 +213,7 @@ export class PurchasesService {
         nationalId: `%${nationalId}%`,
       });
     }
-    if (ticketNumber) {
+    if (ticketNumber !== undefined && !Number.isNaN(ticketNumber)) {
       qb.innerJoin(
         'purchase.tickets',
         'ticket',
@@ -194,8 +224,38 @@ export class PurchasesService {
 
     const [items, total] = await qb.getManyAndCount();
 
+    const signedItems = await Promise.all(
+      items.map(async (purchase) => {
+        const [paymentScreenshotUrl, raffleImageUrl, paymentMethodImageUrl] =
+          await Promise.all([
+            this.s3Service.getPresignedGetUrl(purchase.paymentScreenshotUrl),
+            this.s3Service.getPresignedGetUrl(purchase.raffle?.imageUrl),
+            this.s3Service.getPresignedGetUrl(purchase.paymentMethod?.imageUrl),
+          ]);
+
+        return {
+          ...purchase,
+          paymentScreenshotUrl:
+            paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
+          raffle: purchase.raffle
+            ? {
+                ...purchase.raffle,
+                imageUrl: raffleImageUrl ?? purchase.raffle.imageUrl,
+              }
+            : purchase.raffle,
+          paymentMethod: purchase.paymentMethod
+            ? {
+                ...purchase.paymentMethod,
+                imageUrl:
+                  paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
+              }
+            : purchase.paymentMethod,
+        };
+      }),
+    );
+
     return {
-      items,
+      items: signedItems,
       total,
       page,
       limit,
@@ -209,7 +269,31 @@ export class PurchasesService {
       relations: ['customer', 'raffle', 'paymentMethod', 'tickets'],
     });
     if (!purchase) throw new NotFoundException('Purchase not found');
-    return purchase;
+
+    const [paymentScreenshotUrl, raffleImageUrl, paymentMethodImageUrl] =
+      await Promise.all([
+        this.s3Service.getPresignedGetUrl(purchase.paymentScreenshotUrl),
+        this.s3Service.getPresignedGetUrl(purchase.raffle?.imageUrl),
+        this.s3Service.getPresignedGetUrl(purchase.paymentMethod?.imageUrl),
+      ]);
+
+    return {
+      ...purchase,
+      paymentScreenshotUrl:
+        paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
+      raffle: purchase.raffle
+        ? {
+            ...purchase.raffle,
+            imageUrl: raffleImageUrl ?? purchase.raffle.imageUrl,
+          }
+        : purchase.raffle,
+      paymentMethod: purchase.paymentMethod
+        ? {
+            ...purchase.paymentMethod,
+            imageUrl: paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
+          }
+        : purchase.paymentMethod,
+    };
   }
 
   async remove(uid: string) {

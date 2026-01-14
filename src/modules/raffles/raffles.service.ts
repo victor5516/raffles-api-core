@@ -1,16 +1,57 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Raffle } from './entities/raffle.entity';
 import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { UpdateRaffleDto } from './dto/update-raffle.dto';
+import { S3Service } from '../../common/s3/s3.service';
 
 @Injectable()
 export class RafflesService {
   constructor(
     @InjectRepository(Raffle)
     private raffleRepository: Repository<Raffle>,
+    private readonly s3Service: S3Service,
   ) {}
+
+  async createWithImage(
+    createRaffleDto: CreateRaffleDto,
+    file: Express.Multer.File | undefined,
+  ) {
+    if (file) {
+      const { key } = await this.s3Service.uploadBuffer({
+        keyPrefix: `raffles`,
+        originalName: file.originalname,
+        buffer: file.buffer,
+        contentType: file.mimetype,
+      });
+      createRaffleDto = { ...createRaffleDto, image_url: key };
+    }
+    return this.create(createRaffleDto);
+  }
+
+  async updateWithImage(
+    uid: string,
+    updateRaffleDto: UpdateRaffleDto,
+    file: Express.Multer.File | undefined,
+    userId?: string,
+  ) {
+    if (file) {
+      if (!userId) throw new UnauthorizedException();
+      const { key } = await this.s3Service.uploadBuffer({
+        keyPrefix: `raffles/${userId}`,
+        originalName: file.originalname,
+        buffer: file.buffer,
+        contentType: file.mimetype,
+      });
+      updateRaffleDto = { ...updateRaffleDto, image_url: key };
+    }
+    return this.update(uid, updateRaffleDto);
+  }
 
   async create(createRaffleDto: CreateRaffleDto) {
     const raffle = this.raffleRepository.create({
@@ -31,24 +72,35 @@ export class RafflesService {
       .orderBy('raffle.created_at', 'DESC');
 
     const raffles = await qb.getMany();
-    return raffles.map((r) => ({
-      ...r,
-      tickets_sold: (r as any).ticketsSold,
-      percentage_sold:
-        r.totalTickets > 0
-          ? ((r as any).ticketsSold / r.totalTickets) * 100
-          : 0,
-    }));
+    return await Promise.all(
+      raffles.map(async (r) => {
+        const ticketsSold = (r as unknown as { ticketsSold: number })
+          .ticketsSold;
+        return {
+          ...r,
+          imageUrl:
+            (await this.s3Service.getPresignedGetUrl(r.imageUrl)) ?? r.imageUrl,
+          tickets_sold: ticketsSold,
+          percentage_sold:
+            r.totalTickets > 0 ? (ticketsSold / r.totalTickets) * 100 : 0,
+        };
+      }),
+    );
   }
 
   async findOne(uid: string) {
     const raffle = await this.raffleRepository.findOne({ where: { uid } });
     if (!raffle) throw new NotFoundException('Raffle not found');
-    return raffle;
+    return {
+      ...raffle,
+      imageUrl:
+        (await this.s3Service.getPresignedGetUrl(raffle.imageUrl)) ??
+        raffle.imageUrl,
+    };
   }
 
   async update(uid: string, updateRaffleDto: UpdateRaffleDto) {
-    const raffle = await this.findOne(uid);
+    await this.findOne(uid);
 
     const updateData: Partial<Raffle> = {};
     if (updateRaffleDto.title) updateData.title = updateRaffleDto.title;

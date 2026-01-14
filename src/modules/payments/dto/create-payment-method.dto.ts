@@ -20,7 +20,7 @@ export class CreatePaymentMethodDto {
   payment_data: any;
 
   @IsNotEmpty()
-  @Transform(({ value }) => parseFloat(value))
+  @Transform(({ value }) => parseFloat(String(value)))
   @IsNumber()
   minimum_payment_amount: number;
 

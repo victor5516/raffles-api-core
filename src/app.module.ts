@@ -13,6 +13,7 @@ import { CurrenciesModule } from './modules/currencies/currencies.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
+import { S3Module } from './common/s3/s3.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { TicketsModule } from './modules/tickets/tickets.module';
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',
     }),
+    S3Module,
     AuthModule,
     RafflesModule,
     PaymentMethodsModule,

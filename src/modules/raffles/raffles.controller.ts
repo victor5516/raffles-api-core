@@ -14,40 +14,29 @@ import { RafflesService } from './raffles.service';
 import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { UpdateRaffleDto } from './dto/update-raffle.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { memoryStorage } from 'multer';
 import { Request } from 'express';
+import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
+import { Admin } from '../auth/entities/admin.entity';
+
+type AuthenticatedRequest = Request & { user: Admin };
 
 @Controller('raffles')
 export class RafflesController {
   constructor(private readonly rafflesService: RafflesService) {}
 
   @Post()
+  @AdminAuth()
   @UseInterceptors(
     FileInterceptor('image', {
-      storage: diskStorage({
-        destination: './uploads',
-        filename: (req, file, cb) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
     }),
   )
-  create(
+  async create(
     @Body() createRaffleDto: CreateRaffleDto,
     @UploadedFile() file: Express.Multer.File,
-    @Req() req: Request,
   ) {
-    if (file) {
-      const protocol = req.protocol;
-      const host = req.get('host');
-      createRaffleDto.image_url = `${protocol}://${host}/uploads/${file.filename}`;
-    }
-    return this.rafflesService.create(createRaffleDto);
+    return this.rafflesService.createWithImage(createRaffleDto, file);
   }
 
   @Get()
@@ -61,35 +50,28 @@ export class RafflesController {
   }
 
   @Put(':uid')
+  @AdminAuth()
   @UseInterceptors(
     FileInterceptor('image', {
-      storage: diskStorage({
-        destination: './uploads',
-        filename: (req, file, cb) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
     }),
   )
-  update(
+  async update(
     @Param('uid') uid: string,
     @Body() updateRaffleDto: UpdateRaffleDto,
     @UploadedFile() file: Express.Multer.File,
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
   ) {
-    if (file) {
-      const protocol = req.protocol;
-      const host = req.get('host');
-      updateRaffleDto.image_url = `${protocol}://${host}/uploads/${file.filename}`;
-    }
-    return this.rafflesService.update(uid, updateRaffleDto);
+    return this.rafflesService.updateWithImage(
+      uid,
+      updateRaffleDto,
+      file,
+      req.user?.uid,
+    );
   }
 
   @Delete(':uid')
+  @AdminAuth()
   remove(@Param('uid') uid: string) {
     return this.rafflesService.remove(uid);
   }

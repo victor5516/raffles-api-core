@@ -20,18 +20,18 @@ export class CreateRaffleDto {
   description?: string;
 
   @IsOptional()
-  @Transform(({ value }) => parseInt(value))
+  @Transform(({ value }) => parseInt(String(value)))
   @IsNumber()
   digits_length: number;
 
   @IsNotEmpty()
-  @Transform(({ value }) => parseFloat(value))
+  @Transform(({ value }) => parseFloat(String(value)))
   @IsNumber()
   @Min(0)
   ticket_price: number;
 
   @IsNotEmpty()
-  @Transform(({ value }) => parseInt(value))
+  @Transform(({ value }) => parseInt(String(value)))
   @IsNumber()
   @Min(1)
   total_tickets: number;

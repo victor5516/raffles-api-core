@@ -8,16 +8,14 @@ import {
   Delete,
   UseInterceptors,
   UploadedFile,
-  Req,
   Query,
 } from '@nestjs/common';
 import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
-import type { Request } from 'express';
+import { memoryStorage } from 'multer';
+import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
 
 @Controller('purchases')
 export class PurchasesController {
@@ -26,43 +24,28 @@ export class PurchasesController {
   @Post()
   @UseInterceptors(
     FileInterceptor('payment_screenshot_url', {
-      storage: diskStorage({
-        destination: './uploads',
-        filename: (req, file, cb) => {
-          const randomName = Array(32)
-            .fill(null)
-            .map(() => Math.round(Math.random() * 16).toString(16))
-            .join('');
-          cb(null, `${randomName}${extname(file.originalname)}`);
-        },
-      }),
+      storage: memoryStorage(),
     }),
   )
-  create(
+  async create(
     @Body() createDto: CreatePurchaseDto,
     @UploadedFile() file: Express.Multer.File,
-    @Req() req: Request,
   ) {
-    if (file) {
-      const protocol = req.protocol;
-      const host = req.get('host');
-      createDto.payment_screenshot_url = `${protocol}://${host}/uploads/${file.filename}`;
-    }
-
     // Parse customer if string (multipart)
     if (typeof createDto.customer === 'string') {
       try {
-        createDto.customer = JSON.parse(createDto.customer);
-      } catch (e) {
+        const parsed: unknown = JSON.parse(createDto.customer);
+        createDto.customer = parsed as CreatePurchaseDto['customer'];
+      } catch {
         // invalid json, validation pipe might catch it later or it stays string
       }
     }
 
-    return this.purchasesService.create(createDto);
+    return this.purchasesService.create(createDto, file);
   }
 
   @Get()
-  findAll(@Query() query: any) {
+  findAll(@Query() query: Record<string, unknown>) {
     return this.purchasesService.findAll(query);
   }
 
@@ -72,6 +55,7 @@ export class PurchasesController {
   }
 
   @Patch(':uid/status')
+  @AdminAuth()
   updateStatus(
     @Param('uid') uid: string,
     @Body() updateDto: UpdatePurchaseStatusDto,
@@ -80,6 +64,7 @@ export class PurchasesController {
   }
 
   @Delete(':uid')
+  @AdminAuth()
   remove(@Param('uid') uid: string) {
     return this.purchasesService.remove(uid);
   }

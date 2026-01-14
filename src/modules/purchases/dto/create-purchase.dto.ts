@@ -3,11 +3,10 @@ import {
   IsString,
   IsNumber,
   Min,
-  IsUUID,
   IsEmail,
   IsOptional,
 } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { Transform } from 'class-transformer';
 
 export class CustomerDto {
   @IsNotEmpty()
@@ -37,7 +36,7 @@ export class CreatePurchaseDto {
   paymentMethodId: string;
 
   @IsNotEmpty()
-  @Transform(({ value }) => parseInt(value))
+  @Transform(({ value }) => parseInt(String(value)))
   @IsNumber()
   @Min(1)
   ticket_quantity: number;

@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Currency } from './entities/currency.entity';
@@ -21,7 +17,8 @@ export class CurrenciesService {
       const currency = this.currencyRepository.create(createDto);
       return await this.currencyRepository.save(currency);
     } catch (error) {
-      if (error.code === '23505') {
+      const err = error as { code?: string };
+      if (err.code === '23505') {
         throw new ConflictException('Currency already exists.');
       }
       throw error;
