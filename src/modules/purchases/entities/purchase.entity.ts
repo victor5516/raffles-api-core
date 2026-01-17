@@ -11,11 +11,11 @@ import { Raffle } from '../../raffles/entities/raffle.entity';
 import { Customer } from '../../customers/entities/customer.entity';
 import { PaymentMethod } from '../../payments/entities/payment-method.entity';
 import { Ticket } from '../../tickets/entities/ticket.entity';
-
 export enum PurchaseStatus {
   PENDING = 'pending',
   VERIFIED = 'verified',
   REJECTED = 'rejected',
+  MANUAL_REVIEW = 'manual_review',
 }
 
 @Entity('purchase')
@@ -59,6 +59,12 @@ export class Purchase {
     default: PurchaseStatus.PENDING,
   })
   status: PurchaseStatus;
+
+  @Column({ name: 'total_amount' })
+  totalAmount: number;
+
+  @Column({ type: 'jsonb', nullable: true, name: 'ai_analysis_result' })
+  aiAnalysisResult: any;
 
   @CreateDateColumn({ name: 'submitted_at' })
   submittedAt: Date;

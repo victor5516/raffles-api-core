@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -13,9 +14,13 @@ import { Raffle } from 'src/modules/raffles/entities/raffle.entity';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { S3Service } from '../../common/s3/s3.service';
+import { SqsService } from '../../common/sqs/sqs.service';
+import { AiWebhookDto } from './dto/ai-webhook.dto';
 
 @Injectable()
 export class PurchasesService {
+  private readonly logger = new Logger(PurchasesService.name);
+
   constructor(
     @InjectRepository(Purchase)
     private purchaseRepository: Repository<Purchase>,
@@ -27,13 +32,14 @@ export class PurchasesService {
     private raffleRepository: Repository<Raffle>,
     private dataSource: DataSource,
     private readonly s3Service: S3Service,
+    private readonly sqsService: SqsService,
   ) {}
 
   async create(
     createDto: CreatePurchaseDto,
     file: Express.Multer.File | undefined,
   ) {
-    return this.dataSource.transaction(async (manager) => {
+    const createdPurchase = await this.dataSource.transaction(async (manager) => {
       // 1. Handle Customer
       const { customer: customerData, ...purchaseData } = createDto;
 
@@ -77,10 +83,22 @@ export class PurchasesService {
         paymentScreenshotUrl: key,
         bankReference: purchaseData.bank_reference,
         customerId: customerEntity.uid,
+        totalAmount: purchaseData.totalAmount,
       });
 
       return await manager.save(Purchase, purchase);
     });
+
+    try {
+      await this.sqsService.sendPurchaseCreatedMessage(createdPurchase);
+    } catch (err) {
+      this.logger.error(
+        'Failed to send purchase created message to SQS.',
+        err instanceof Error ? err.stack : String(err),
+      );
+    }
+
+    return createdPurchase;
   }
 
   async updateStatus(uid: string, updateDto: UpdatePurchaseStatusDto) {
@@ -300,5 +318,16 @@ export class PurchasesService {
     const result = await this.purchaseRepository.delete(uid);
     if (result.affected === 0)
       throw new NotFoundException('Purchase not found');
+  }
+
+  async processAiWebhook(webhook: AiWebhookDto) {
+    const { purchaseId, status, aiResult } = webhook;
+    const purchase = await this.purchaseRepository.findOne({
+      where: { uid: purchaseId },
+    });
+    if (!purchase) throw new NotFoundException('Purchase not found');
+    purchase.status = status;
+    purchase.aiAnalysisResult = aiResult;
+    return await this.purchaseRepository.save(purchase);
   }
 }

@@ -16,10 +16,13 @@ import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
-
+import { AiWebhookDto } from './dto/ai-webhook.dto';
+import { Headers } from '@nestjs/common';
+import { UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 @Controller('purchases')
 export class PurchasesController {
-  constructor(private readonly purchasesService: PurchasesService) {}
+  constructor(private readonly purchasesService: PurchasesService, private readonly configService: ConfigService) {}
 
   @Post()
   @UseInterceptors(
@@ -67,5 +70,12 @@ export class PurchasesController {
   @AdminAuth()
   remove(@Param('uid') uid: string) {
     return this.purchasesService.remove(uid);
+  }
+
+  @Post('webhooks/ai-result')
+  processAiWebhook(@Body() webhook: AiWebhookDto, @Headers('x-internal-secret') signature: string) {
+    const aiWebhookSignature = this.configService.getOrThrow<string>('AI_WEBHOOK_SIGNATURE');
+    if (!signature || signature !== aiWebhookSignature) throw new UnauthorizedException('Signature is required');
+    return this.purchasesService.processAiWebhook(webhook);
   }
 }

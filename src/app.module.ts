@@ -14,6 +14,7 @@ import { PurchasesModule } from './modules/purchases/purchases.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { S3Module } from './common/s3/s3.module';
+import { SqsModule } from './common/sqs/sqs.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { S3Module } from './common/s3/s3.module';
       serveRoot: '/uploads',
     }),
     S3Module,
+    SqsModule,
     AuthModule,
     RafflesModule,
     PaymentMethodsModule,

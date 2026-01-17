@@ -51,4 +51,11 @@ export class CreatePurchaseDto {
 
   // payment_screenshot_url handled by interceptor
   payment_screenshot_url?: string;
+
+  @IsNotEmpty()
+  @Transform(({ value }) => parseFloat(String(value)))
+  @IsNumber()
+  @Min(0)
+  totalAmount: number;
+
 }

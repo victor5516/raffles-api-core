@@ -3,7 +3,9 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  OneToMany,
 } from 'typeorm';
+import { Purchase } from '../../purchases/entities/purchase.entity';
 
 @Entity('currency')
 export class Currency {
@@ -21,4 +23,5 @@ export class Currency {
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
 }
