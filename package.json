@@ -19,7 +19,13 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:create": "ts-node scripts/create-db.ts",
-    "db:seed": "ts-node scripts/seed.ts"
+    "db:seed": "ts-node scripts/seed.ts",
+    "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
+    "migration:generate": "npm run typeorm -- migration:generate src/migrations/Init -d src/config/typeorm.datasource.ts",
+    "migration:run": "npm run typeorm -- migration:run -d src/config/typeorm.datasource.ts",
+    "migration:revert": "npm run typeorm -- migration:revert -d src/config/typeorm.datasource.ts",
+    "migration:run:prod": "node ./node_modules/typeorm/cli.js -d dist/config/typeorm.datasource.js migration:run",
+    "migration:revert:prod": "node ./node_modules/typeorm/cli.js -d dist/config/typeorm.datasource.js migration:revert"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.969.0",

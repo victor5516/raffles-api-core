@@ -29,6 +29,7 @@ export class SqsService {
   async sendPurchaseCreatedMessage(purchase: unknown): Promise<{
     messageId: string | undefined;
   }> {
+    try {
     const res = await this.client.send(
       new SendMessageCommand({
         QueueUrl: this.purchasesQueueUrl,
@@ -40,8 +41,13 @@ export class SqsService {
       this.logger.warn(
         'SQS message sent but no MessageId returned by AWS SDK.',
       );
+      }
+      console.log('Message sent to SQS successfully:', res.MessageId);
+      console.log('Message body:', purchase);
+      return { messageId: res.MessageId };
+    } catch (error) {
+      this.logger.error('Error sending message to SQS:', error);
+      throw error;
     }
-
-    return { messageId: res.MessageId };
   }
 }
