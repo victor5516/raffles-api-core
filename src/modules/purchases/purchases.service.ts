@@ -322,12 +322,49 @@ export class PurchasesService {
 
   async processAiWebhook(webhook: AiWebhookDto) {
     const { purchaseId, status, aiResult } = webhook;
+
+    // Normalize status coming from workers (e.g. VERIFIED/MANUAL_REVIEW) to our DB enum values.
+    const normalizedStatus = this.normalizePurchaseStatus(status);
+    if (!normalizedStatus) {
+      throw new BadRequestException(`Invalid status: ${String(status)}`);
+    }
+
     const purchase = await this.purchaseRepository.findOne({
       where: { uid: purchaseId },
     });
     if (!purchase) throw new NotFoundException('Purchase not found');
-    purchase.status = status;
-    purchase.aiAnalysisResult = aiResult;
-    return await this.purchaseRepository.save(purchase);
+
+    purchase.status = normalizedStatus;
+    purchase.aiAnalysisResult = aiResult ?? null;
+    if (normalizedStatus === PurchaseStatus.VERIFIED) {
+      purchase.verifiedAt = new Date();
+    }
+
+    const updatedPurchase = await this.purchaseRepository.save(purchase);
+    console.log('Updated purchase:', updatedPurchase);
+    return updatedPurchase;
+  }
+
+  private normalizePurchaseStatus(value: unknown): PurchaseStatus | null {
+    if (typeof value !== 'string') return null;
+
+    // Already in DB format
+    if ((Object.values(PurchaseStatus) as string[]).includes(value)) {
+      return value as PurchaseStatus;
+    }
+
+    // Worker format
+    switch (value) {
+      case 'VERIFIED':
+        return PurchaseStatus.VERIFIED;
+      case 'MANUAL_REVIEW':
+        return PurchaseStatus.MANUAL_REVIEW;
+      case 'REJECTED':
+        return PurchaseStatus.REJECTED;
+      case 'PENDING':
+        return PurchaseStatus.PENDING;
+      default:
+        return null;
+    }
   }
 }
