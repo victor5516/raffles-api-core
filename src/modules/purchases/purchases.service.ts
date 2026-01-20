@@ -322,23 +322,64 @@ export class PurchasesService {
   }
 
   async processAiWebhook(webhook: AiWebhookDto) {
-    const { purchaseId, status, aiResult } = webhook;
-
-    // Normalize status coming from workers (e.g. VERIFIED/MANUAL_REVIEW) to our DB enum values.
-    const normalizedStatus = this.normalizePurchaseStatus(status);
-    if (!normalizedStatus) {
-      throw new BadRequestException(`Invalid status: ${String(status)}`);
-    }
+    const { purchaseId, aiResult } = webhook;
 
     const purchase = await this.purchaseRepository.findOne({
       where: { uid: purchaseId },
+      relations: ['paymentMethod'],
     });
     if (!purchase) throw new NotFoundException('Purchase not found');
 
-    purchase.status = normalizedStatus;
     purchase.aiAnalysisResult = aiResult ?? null;
-    if (normalizedStatus === PurchaseStatus.VERIFIED) {
+
+    // Define structure for type safety
+    interface ReceiptData {
+      amount: number | null;
+      currency: string | null;
+      reference: string | null;
+    }
+
+    const aiData = aiResult as ReceiptData;
+
+    // 1. Check if AI data is sufficient
+    if (!aiData?.amount || !aiData?.currency || !aiData?.reference) {
+      purchase.status = PurchaseStatus.MANUAL_REVIEW;
+      return this.purchaseRepository.save(purchase);
+    }
+
+    // 2. Check for duplicates by reference
+    const cleanAiRef = String(aiData.reference).replace(/\D/g, '');
+    const existingWithRef = await this.purchaseRepository
+      .createQueryBuilder('p')
+      .where('p.uid != :uid', { uid: purchaseId })
+      .andWhere("REPLACE(p.bank_reference, ' ', '') LIKE :ref", {
+        ref: `%${cleanAiRef}%`,
+      })
+      .getOne();
+
+    if (existingWithRef) {
+      purchase.status = PurchaseStatus.DUPLICATED;
+      return this.purchaseRepository.save(purchase);
+    }
+
+    // 3. Verify amount
+    const amountDiff = Math.abs(purchase.totalAmount - aiData.amount);
+    const isAmountValid = amountDiff < 0.01;
+
+    // 4. Verify currency
+    const expectedCurrency = purchase.paymentMethod?.currency;
+    const isCurrencyValid = expectedCurrency === aiData.currency;
+
+    // 5. Verify reference (fuzzy match)
+    const cleanUserRef = purchase.bankReference.replace(/\D/g, '');
+    const isRefValid =
+      cleanAiRef.endsWith(cleanUserRef) || cleanUserRef.endsWith(cleanAiRef);
+
+    if (isAmountValid && isCurrencyValid && isRefValid) {
+      purchase.status = PurchaseStatus.VERIFIED;
       purchase.verifiedAt = new Date();
+    } else {
+      purchase.status = PurchaseStatus.MANUAL_REVIEW;
     }
 
     const updatedPurchase = await this.purchaseRepository.save(purchase);

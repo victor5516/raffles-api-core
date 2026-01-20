@@ -1,4 +1,4 @@
-import { Allow, IsString, IsUUID } from 'class-validator';
+import { Allow, IsString, IsUUID, IsOptional } from 'class-validator';
 import { PurchaseStatus } from '../entities/purchase.entity';
 
 export class AiWebhookDto {
@@ -6,8 +6,9 @@ export class AiWebhookDto {
   purchaseId: string;
 
   // Accept both backend values (verified/manual_review/...) and worker values (VERIFIED/MANUAL_REVIEW/...)
+  @IsOptional()
   @IsString()
-  status: PurchaseStatus | string;
+  status?: PurchaseStatus | string;
 
   // We accept any JSON payload from the AI worker, but we must keep the property under whitelist:true.
   @Allow()

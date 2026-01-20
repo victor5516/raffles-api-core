@@ -17,6 +17,7 @@ export enum PurchaseStatus {
   VERIFIED = 'verified',
   REJECTED = 'rejected',
   MANUAL_REVIEW = 'manual_review',
+  DUPLICATED = 'duplicated',
 }
 
 @Entity('purchase')
