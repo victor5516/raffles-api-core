@@ -112,6 +112,14 @@ export class PurchasesService {
 
       if (!purchase) throw new NotFoundException('Purchase not found');
 
+      // Pessimistic Lock to prevent over-selling
+      const raffle = await manager.findOne(Raffle, {
+        where: { uid: purchase.raffleId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!raffle) throw new NotFoundException('Raffle not found');
+
       if (purchase.status === PurchaseStatus.VERIFIED) {
         throw new BadRequestException('Purchase has already been verified.');
       }
@@ -126,7 +134,7 @@ export class PurchasesService {
       let assignedTickets: number[] = [];
 
       if (status === PurchaseStatus.VERIFIED) {
-        const { ticketQuantity, raffle } = purchase;
+        const { ticketQuantity } = purchase;
 
         // 1. Get already sold tickets for this raffle (Optimized query)
         // We query the new ticketNumbers array column directly
@@ -168,15 +176,6 @@ export class PurchasesService {
         purchase.ticketNumbers = toAssign;
         await manager.save(Purchase, purchase);
 
-        // 5. Save to Ticket (Index for search)
-        const tickets = toAssign.map((num) =>
-          manager.create(Ticket, {
-            raffleId: raffle.uid,
-            purchaseId: purchase.uid,
-            ticketNumber: num,
-          }),
-        );
-        await manager.save(Ticket, tickets);
         assignedTickets = toAssign;
       }
 
@@ -238,12 +237,7 @@ export class PurchasesService {
       qb.andWhere('paymentMethod.currency = :currency', { currency });
     }
     if (ticketNumber !== undefined && !Number.isNaN(ticketNumber)) {
-      qb.innerJoin(
-        'purchase.tickets',
-        'ticket',
-        'ticket.ticketNumber = :ticketNumber',
-        { ticketNumber },
-      );
+      qb.andWhere(':ticketNumber = ANY(purchase.ticketNumbers)', { ticketNumber });
     }
 
     const [items, total] = await qb.getManyAndCount();
