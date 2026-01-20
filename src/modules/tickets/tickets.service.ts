@@ -1,13 +1,13 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Ticket } from './entities/ticket.entity';
+import { Purchase, PurchaseStatus } from '../purchases/entities/purchase.entity';
 
 @Injectable()
 export class TicketsService {
   constructor(
-    @InjectRepository(Ticket)
-    private ticketRepository: Repository<Ticket>,
+    @InjectRepository(Purchase)
+    private purchaseRepository: Repository<Purchase>,
   ) {}
 
   async search(nationalId: string, raffleUid: string) {
@@ -15,26 +15,43 @@ export class TicketsService {
       throw new BadRequestException('national_id and raffle_uid are required');
     }
 
-    const tickets = await this.ticketRepository.find({
+    const purchases = await this.purchaseRepository.find({
       where: {
         raffleId: raffleUid,
-        purchase: {
-          customer: {
-            nationalId: nationalId,
-          },
+        status: PurchaseStatus.VERIFIED,
+        customer: {
+          nationalId: nationalId,
         },
       },
-      relations: ['purchase', 'purchase.customer'],
-      order: { ticketNumber: 'ASC' },
+      relations: ['customer'],
+      select: {
+        uid: true,
+        ticketNumbers: true,
+        status: true,
+        verifiedAt: true,
+        submittedAt: true,
+        customer: {
+          fullName: true,
+          nationalId: true,
+        },
+      },
     });
 
-    return tickets.map((ticket) => ({
-      id: ticket.uid,
-      ticket_number: ticket.ticketNumber.toString(),
-      customer_name: ticket.purchase?.customer?.fullName || 'N/A',
-      customer_national_id: ticket.purchase?.customer?.nationalId || 'N/A',
-      purchase_date: ticket.assignedAt.toISOString(),
-      status: ticket.purchase?.status || 'active',
-    }));
+    const allTickets = purchases.flatMap((purchase) =>
+      (purchase.ticketNumbers || []).map((num) => ({
+        id: `${purchase.uid}-${num}`,
+        ticket_number: num.toString(),
+        customer_name: purchase.customer?.fullName || 'N/A',
+        customer_national_id: purchase.customer?.nationalId || 'N/A',
+        purchase_date:
+          purchase.verifiedAt?.toISOString() ||
+          purchase.submittedAt.toISOString(),
+        status: purchase.status,
+      })),
+    );
+
+    return allTickets.sort(
+      (a, b) => Number(a.ticket_number) - Number(b.ticket_number),
+    );
   }
 }

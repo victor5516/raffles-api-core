@@ -6,6 +6,7 @@ import {
   ManyToOne,
   OneToMany,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Raffle } from '../../raffles/entities/raffle.entity';
 import { Customer } from '../../customers/entities/customer.entity';
@@ -19,6 +20,7 @@ export enum PurchaseStatus {
 }
 
 @Entity('purchase')
+@Index('purchase_raffle_tickets_gin_idx', ['raffleId', 'ticketNumbers'], { using: 'gin' } as any)
 export class Purchase {
   @PrimaryGeneratedColumn('uuid')
   uid: string;
