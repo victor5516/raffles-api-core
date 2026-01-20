@@ -12,9 +12,9 @@ export default registerAs(
       type: 'postgres',
       url: process.env.DATABASE_URL,
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-      synchronize: !isProd, // Don't use true in production!
-      logging: !isProd,
-      ...(isProd
+      synchronize: true, // Don't use true in production!
+      logging: true,
+      ...(true
         ? {
             ssl: {
               rejectUnauthorized,

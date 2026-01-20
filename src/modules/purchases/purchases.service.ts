@@ -121,52 +121,54 @@ export class PurchasesService {
         purchase.verifiedAt = new Date();
       }
 
-      const updatedPurchase = await manager.save(Purchase, purchase);
+      // Save initial status update
+      await manager.save(Purchase, purchase);
       let assignedTickets: number[] = [];
 
       if (status === PurchaseStatus.VERIFIED) {
         const { ticketQuantity, raffle } = purchase;
 
-        // Ticket Logic
-        // Fix: Use generic FindOptions type or explicit casting if strict checks fail
-        // or ensure Ticket entity is correctly imported.
-        // Assuming Ticket has ticketNumber column.
-        const soldTickets = await manager.find(Ticket, {
-          where: { raffleId: raffle.uid },
-          select: { ticketNumber: true },
-        });
-        const soldTicketNumbers = new Set(
-          soldTickets.map((t) => t.ticketNumber),
+        // 1. Get already sold tickets for this raffle (Optimized query)
+        // We query the new ticketNumbers array column directly
+        const soldTicketsRaw = await manager.query(
+          `SELECT unnest("ticket_numbers") as num FROM purchase WHERE "raffle_id" = $1 AND "ticket_numbers" IS NOT NULL`,
+          [raffle.uid],
+        );
+        const soldSet = new Set<number>(
+          soldTicketsRaw.map((s: { num: number }) => s.num),
         );
 
-        const totalTickets = raffle.totalTickets;
-        const allPossibleNumbers = Array.from(
-          { length: totalTickets },
-          (_, i) => i,
-        );
-
-        // Fisher-Yates Shuffle
-        for (let i = allPossibleNumbers.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [allPossibleNumbers[i], allPossibleNumbers[j]] = [
-            allPossibleNumbers[j],
-            allPossibleNumbers[i],
-          ];
-        }
-
-        const toAssign: number[] = [];
-        for (const num of allPossibleNumbers) {
-          if (toAssign.length >= ticketQuantity) break;
-          if (!soldTicketNumbers.has(num)) {
-            toAssign.push(num);
-          }
-        }
-
-        if (toAssign.length < ticketQuantity) {
+        // 2. Validate availability
+        const available = raffle.totalTickets - soldSet.size;
+        if (available < ticketQuantity) {
           throw new ConflictException('Not enough tickets available.');
         }
 
-        // Create tickets
+        // 3. Smart Random Generation
+        const toAssign: number[] = [];
+        const maxAttempts = ticketQuantity * 10;
+        let attempts = 0;
+
+        while (toAssign.length < ticketQuantity && attempts < maxAttempts) {
+          const randomNum = Math.floor(Math.random() * raffle.totalTickets);
+          if (!soldSet.has(randomNum)) {
+            toAssign.push(randomNum);
+            soldSet.add(randomNum); // Avoid duplicates in current batch
+          }
+          attempts++;
+        }
+
+        if (toAssign.length < ticketQuantity) {
+          throw new ConflictException(
+            'Could not assign consecutive tickets, please try again.',
+          );
+        }
+
+        // 4. Save to Purchase (Fast read)
+        purchase.ticketNumbers = toAssign;
+        await manager.save(Purchase, purchase);
+
+        // 5. Save to Ticket (Index for search)
         const tickets = toAssign.map((num) =>
           manager.create(Ticket, {
             raffleId: raffle.uid,
@@ -174,13 +176,12 @@ export class PurchasesService {
             ticketNumber: num,
           }),
         );
-
         await manager.save(Ticket, tickets);
         assignedTickets = toAssign;
       }
 
       return {
-        ...updatedPurchase,
+        ...purchase,
         tickets: assignedTickets,
       };
     });
@@ -289,7 +290,7 @@ export class PurchasesService {
   async findOne(uid: string) {
     const purchase = await this.purchaseRepository.findOne({
       where: { uid },
-      relations: ['customer', 'raffle', 'paymentMethod', 'tickets'],
+      relations: ['customer', 'raffle', 'paymentMethod'],
     });
     if (!purchase) throw new NotFoundException('Purchase not found');
 
@@ -302,6 +303,7 @@ export class PurchasesService {
 
     return {
       ...purchase,
+      ticketNumbers: purchase.ticketNumbers || [], // Ensure it returns array
       paymentScreenshotUrl:
         paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
       raffle: purchase.raffle
@@ -371,5 +373,41 @@ export class PurchasesService {
       default:
         return null;
     }
+  }
+
+  async migrateTickets() {
+    const BATCH_SIZE = 100;
+    let processed = 0;
+
+    // Find verified purchases with no ticketNumbers array
+    const purchases = await this.purchaseRepository.find({
+      where: {
+        status: PurchaseStatus.VERIFIED,
+        ticketNumbers: null,
+      },
+      take: BATCH_SIZE,
+    });
+
+    if (purchases.length === 0) {
+      return { message: 'No purchases to migrate' };
+    }
+
+    for (const purchase of purchases) {
+      const tickets = await this.ticketRepository.find({
+        where: { purchaseId: purchase.uid },
+        select: { ticketNumber: true },
+      });
+
+      if (tickets.length > 0) {
+        purchase.ticketNumbers = tickets.map((t) => t.ticketNumber);
+        await this.purchaseRepository.save(purchase);
+        processed++;
+      }
+    }
+
+    return {
+      message: `Migrated ${processed} purchases`,
+      remaining: purchases.length === BATCH_SIZE,
+    };
   }
 }

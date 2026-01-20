@@ -72,6 +72,9 @@ export class Purchase {
   @Column({ name: 'verified_at', nullable: true })
   verifiedAt: Date;
 
+  @Column('integer', { array: true, nullable: true, name: 'ticket_numbers' })
+  ticketNumbers: number[];
+
   @OneToMany(() => Ticket, (ticket) => ticket.purchase)
   tickets: Ticket[];
 }

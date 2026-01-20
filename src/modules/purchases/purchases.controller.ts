@@ -78,4 +78,10 @@ export class PurchasesController {
     if (!signature || signature !== aiWebhookSignature) throw new UnauthorizedException('Signature is required');
     return this.purchasesService.processAiWebhook(webhook);
   }
+
+  @Post('migrate-tickets')
+  @AdminAuth()
+  migrateTickets() {
+    return this.purchasesService.migrateTickets();
+  }
 }
