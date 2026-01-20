@@ -192,6 +192,8 @@ export class PurchasesService {
     const status = typeof query.status === 'string' ? query.status : undefined;
     const nationalId =
       typeof query.nationalId === 'string' ? query.nationalId : undefined;
+    const currency =
+      typeof query.currency === 'string' ? query.currency : undefined;
     const ticketNumberRaw = query.ticketNumber;
     const ticketNumber =
       typeof ticketNumberRaw === 'string' || typeof ticketNumberRaw === 'number'
@@ -230,6 +232,9 @@ export class PurchasesService {
       qb.andWhere('customer.nationalId LIKE :nationalId', {
         nationalId: `%${nationalId}%`,
       });
+    }
+    if (currency) {
+      qb.andWhere('paymentMethod.currency = :currency', { currency });
     }
     if (ticketNumber !== undefined && !Number.isNaN(ticketNumber)) {
       qb.innerJoin(
