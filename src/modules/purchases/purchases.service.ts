@@ -252,6 +252,7 @@ export class PurchasesService {
             this.s3Service.getPresignedGetUrl(purchase.paymentMethod?.imageUrl),
           ]);
 
+        const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
         return {
           ...purchase,
           paymentScreenshotUrl:
@@ -264,7 +265,8 @@ export class PurchasesService {
             : purchase.raffle,
           paymentMethod: purchase.paymentMethod
             ? {
-                ...purchase.paymentMethod,
+                ...paymentMethodRest,
+                currency: currency?.symbol || null,
                 imageUrl:
                   paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
               }
@@ -285,7 +287,7 @@ export class PurchasesService {
   async findOne(uid: string) {
     const purchase = await this.purchaseRepository.findOne({
       where: { uid },
-      relations: ['customer', 'raffle', 'paymentMethod'],
+      relations: ['customer', 'raffle', 'paymentMethod', 'paymentMethod.currency'],
     });
     if (!purchase) throw new NotFoundException('Purchase not found');
 
@@ -296,6 +298,7 @@ export class PurchasesService {
         this.s3Service.getPresignedGetUrl(purchase.paymentMethod?.imageUrl),
       ]);
 
+    const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
     return {
       ...purchase,
       ticketNumbers: purchase.ticketNumbers || [], // Ensure it returns array
@@ -309,7 +312,8 @@ export class PurchasesService {
         : purchase.raffle,
       paymentMethod: purchase.paymentMethod
         ? {
-            ...purchase.paymentMethod,
+            ...paymentMethodRest,
+            currency: currency?.symbol || null,
             imageUrl: paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
           }
         : purchase.paymentMethod,
@@ -342,10 +346,25 @@ export class PurchasesService {
 
     const aiData = aiResult as ReceiptData;
 
+    // Helper function to serialize purchase with currency as symbol
+    const serializePurchase = (p: Purchase) => {
+      const { currency, ...paymentMethodRest } = p.paymentMethod || {};
+      return {
+        ...p,
+        paymentMethod: p.paymentMethod
+          ? {
+              ...paymentMethodRest,
+              currency: currency?.symbol || null,
+            }
+          : p.paymentMethod,
+      };
+    };
+
     // 1. Check if AI data is sufficient
     if (!aiData?.amount || !aiData?.currency || !aiData?.reference) {
       purchase.status = PurchaseStatus.MANUAL_REVIEW;
-      return this.purchaseRepository.save(purchase);
+      const savedPurchase = await this.purchaseRepository.save(purchase);
+      return serializePurchase(savedPurchase);
     }
 
     // 2. Check for duplicates by reference
@@ -363,7 +382,8 @@ export class PurchasesService {
 
     if (existingWithRef) {
       purchase.status = PurchaseStatus.DUPLICATED;
-      return this.purchaseRepository.save(purchase);
+      const savedPurchase = await this.purchaseRepository.save(purchase);
+      return serializePurchase(savedPurchase);
     }
 
     // 3. Verify amount
@@ -388,7 +408,7 @@ export class PurchasesService {
 
     const updatedPurchase = await this.purchaseRepository.save(purchase);
     console.log('Updated purchase:', updatedPurchase);
-    return updatedPurchase;
+    return serializePurchase(updatedPurchase);
   }
 
 
