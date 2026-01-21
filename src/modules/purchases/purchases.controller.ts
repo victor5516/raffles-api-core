@@ -9,7 +9,13 @@ import {
   UseInterceptors,
   UploadedFile,
   Query,
+  Sse,
+  MessageEvent,
+  Headers,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { Observable, fromEvent, map, merge } from 'rxjs';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
@@ -17,12 +23,15 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
-import { Headers } from '@nestjs/common';
-import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
 @Controller('purchases')
 export class PurchasesController {
-  constructor(private readonly purchasesService: PurchasesService, private readonly configService: ConfigService) {}
+  constructor(
+    private readonly purchasesService: PurchasesService,
+    private readonly configService: ConfigService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   @Post()
   @UseInterceptors(
@@ -83,5 +92,17 @@ export class PurchasesController {
   @AdminAuth()
   migrateTickets() {
     return this.purchasesService.migrateTickets();
+  }
+
+  @Sse('sse/stream')
+  sseStream(): Observable<MessageEvent> {
+    const purchaseCreated$ = fromEvent(this.eventEmitter, 'purchase.created');
+    const purchaseStatusChanged$ = fromEvent(this.eventEmitter, 'purchase.status_changed');
+
+    return merge(purchaseCreated$, purchaseStatusChanged$).pipe(
+      map((payload) => ({
+        data: JSON.stringify(payload),
+      })),
+    );
   }
 }

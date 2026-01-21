@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Purchase, PurchaseStatus } from './entities/purchase.entity';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
 import { Customer } from 'src/modules/customers/entities/customer.entity';
@@ -29,6 +30,7 @@ export class PurchasesService {
     private dataSource: DataSource,
     private readonly s3Service: S3Service,
     private readonly sqsService: SqsService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async create(
@@ -94,6 +96,13 @@ export class PurchasesService {
       );
     }
 
+    this.eventEmitter.emit('purchase.created', {
+      type: 'created',
+      msg: 'New purchase created',
+      raffleId: createdPurchase.raffleId,
+      purchaseId: createdPurchase.uid,
+    });
+
     return createdPurchase;
   }
 
@@ -147,6 +156,14 @@ export class PurchasesService {
 
     purchase.ticketNumbers = toAssign;
     await manager.save(Purchase, purchase);
+
+    this.eventEmitter.emit('purchase.status_changed', {
+      type: 'verified',
+      msg: 'Purchase verified',
+      raffleId: purchase.raffleId,
+      purchaseId: purchase.uid,
+      status: PurchaseStatus.VERIFIED,
+    });
   }
 
   async updateStatus(uid: string, updateDto: UpdatePurchaseStatusDto) {
@@ -170,6 +187,14 @@ export class PurchasesService {
         await this.assignTickets(manager, purchase);
       } else {
         await manager.save(Purchase, purchase);
+        // Emit status change for non-verified statuses (rejected, manual_review, etc.)
+        this.eventEmitter.emit('purchase.status_changed', {
+          type: 'status_changed',
+          msg: `Purchase status changed to ${status}`,
+          raffleId: purchase.raffleId,
+          purchaseId: purchase.uid,
+          status,
+        });
       }
 
       return {
@@ -360,6 +385,13 @@ export class PurchasesService {
       if (!aiData?.amount || !aiData?.currency || !aiData?.reference) {
         purchase.status = PurchaseStatus.MANUAL_REVIEW;
         const savedPurchase = await manager.save(Purchase, purchase);
+        this.eventEmitter.emit('purchase.status_changed', {
+          type: 'manual_review',
+          msg: 'Purchase requires manual review (insufficient AI data)',
+          raffleId: purchase.raffleId,
+          purchaseId: purchase.uid,
+          status: PurchaseStatus.MANUAL_REVIEW,
+        });
         return serializePurchase(savedPurchase);
       }
 
@@ -380,6 +412,13 @@ export class PurchasesService {
       if (existingWithRef) {
         purchase.status = PurchaseStatus.DUPLICATED;
         const savedPurchase = await manager.save(Purchase, purchase);
+        this.eventEmitter.emit('purchase.status_changed', {
+          type: 'duplicated',
+          msg: 'Purchase marked as duplicated',
+          raffleId: purchase.raffleId,
+          purchaseId: purchase.uid,
+          status: PurchaseStatus.DUPLICATED,
+        });
         return serializePurchase(savedPurchase);
       }
 
@@ -409,6 +448,16 @@ export class PurchasesService {
       }
 
       const updatedPurchase = await manager.save(Purchase, purchase);
+      // Emit for manual review from AI validation
+      if (purchase.status === PurchaseStatus.MANUAL_REVIEW) {
+        this.eventEmitter.emit('purchase.status_changed', {
+          type: 'manual_review',
+          msg: 'Purchase requires manual review (AI validation failed)',
+          raffleId: purchase.raffleId,
+          purchaseId: purchase.uid,
+          status: PurchaseStatus.MANUAL_REVIEW,
+        });
+      }
       return serializePurchase(updatedPurchase);
     });
   }
