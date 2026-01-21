@@ -349,10 +349,13 @@ export class PurchasesService {
 
     // 2. Check for duplicates by reference
     const cleanAiRef = String(aiData.reference).replace(/\D/g, '');
+
+    // Use REGEXP_REPLACE to compare only digits from the database column
+    // This ensures that "123-456" in DB matches "123456" from AI
     const existingWithRef = await this.purchaseRepository
       .createQueryBuilder('p')
       .where('p.uid != :uid', { uid: purchaseId })
-      .andWhere("REPLACE(p.bank_reference, ' ', '') LIKE :ref", {
+      .andWhere("REGEXP_REPLACE(p.bank_reference, '\\D', '', 'g') LIKE :ref", {
         ref: `%${cleanAiRef}%`,
       })
       .getOne();
@@ -387,28 +390,6 @@ export class PurchasesService {
     return updatedPurchase;
   }
 
-  private normalizePurchaseStatus(value: unknown): PurchaseStatus | null {
-    if (typeof value !== 'string') return null;
-
-    // Already in DB format
-    if ((Object.values(PurchaseStatus) as string[]).includes(value)) {
-      return value as PurchaseStatus;
-    }
-
-    // Worker format
-    switch (value) {
-      case 'VERIFIED':
-        return PurchaseStatus.VERIFIED;
-      case 'MANUAL_REVIEW':
-        return PurchaseStatus.MANUAL_REVIEW;
-      case 'REJECTED':
-        return PurchaseStatus.REJECTED;
-      case 'PENDING':
-        return PurchaseStatus.PENDING;
-      default:
-        return null;
-    }
-  }
 
   async migrateTickets() {
     const BATCH_SIZE = 100;
