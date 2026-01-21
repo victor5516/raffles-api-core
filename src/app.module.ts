@@ -13,6 +13,7 @@ import { CurrenciesModule } from './modules/currencies/currencies.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { S3Module } from './common/s3/s3.module';
 import { SqsModule } from './common/sqs/sqs.module';
 
@@ -40,6 +41,7 @@ import { SqsModule } from './common/sqs/sqs.module';
     PurchasesModule,
     CustomersModule,
     TicketsModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
