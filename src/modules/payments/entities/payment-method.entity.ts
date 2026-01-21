@@ -1,10 +1,6 @@
-import { Entity, Column, PrimaryGeneratedColumn, OneToMany } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
 import { Purchase } from '../../purchases/entities/purchase.entity';
-
-export enum CurrencyType {
-  USD = 'USD',
-  VES = 'VES',
-}
+import { Currency } from '../../currencies/entities/currency.entity';
 
 @Entity('payment_method')
 export class PaymentMethod {
@@ -23,8 +19,12 @@ export class PaymentMethod {
   @Column({ name: 'minimum_payment_amount', type: 'decimal' })
   minimumPaymentAmount: number;
 
-  @Column({ type: 'enum', enum: CurrencyType })
-  currency: CurrencyType;
+  @Column({ name: 'currency_id', type: 'uuid' })
+  currencyId: string;
+
+  @ManyToOne(() => Currency, { eager: true })
+  @JoinColumn({ name: 'currency_id' })
+  currency: Currency;
 
   @OneToMany(() => Purchase, (purchase) => purchase.paymentMethod)
   purchases: Purchase[];

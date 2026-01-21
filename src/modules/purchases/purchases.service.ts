@@ -218,6 +218,7 @@ export class PurchasesService {
       .leftJoinAndSelect('purchase.customer', 'customer')
       .leftJoinAndSelect('purchase.raffle', 'raffle')
       .leftJoinAndSelect('purchase.paymentMethod', 'paymentMethod')
+      .leftJoinAndSelect('paymentMethod.currency', 'currency')
       .orderBy('purchase.submittedAt', 'DESC')
       .skip(skip)
       .take(limit);
@@ -234,7 +235,7 @@ export class PurchasesService {
       });
     }
     if (currency) {
-      qb.andWhere('paymentMethod.currency = :currency', { currency });
+      qb.andWhere('currency.symbol = :currency', { currency });
     }
     if (ticketNumber !== undefined && !Number.isNaN(ticketNumber)) {
       qb.andWhere(':ticketNumber = ANY(purchase.ticketNumbers)', { ticketNumber });
@@ -326,7 +327,7 @@ export class PurchasesService {
 
     const purchase = await this.purchaseRepository.findOne({
       where: { uid: purchaseId },
-      relations: ['paymentMethod'],
+      relations: ['paymentMethod', 'paymentMethod.currency'],
     });
     if (!purchase) throw new NotFoundException('Purchase not found');
 
@@ -371,7 +372,7 @@ export class PurchasesService {
 
     // 4. Verify currency
     const expectedCurrency = purchase.paymentMethod?.currency;
-    const isCurrencyValid = expectedCurrency === aiData.currency;
+    const isCurrencyValid = expectedCurrency?.symbol === aiData.currency;
 
     // 5. Verify reference (fuzzy match)
     const cleanUserRef = purchase.bankReference.replace(/\D/g, '');

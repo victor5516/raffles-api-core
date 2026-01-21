@@ -2,10 +2,12 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PaymentMethod } from './entities/payment-method.entity';
+import { Currency } from '../currencies/entities/currency.entity';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 import { S3Service } from '../../common/s3/s3.service';
@@ -15,6 +17,8 @@ export class PaymentMethodsService {
   constructor(
     @InjectRepository(PaymentMethod)
     private paymentMethodRepository: Repository<PaymentMethod>,
+    @InjectRepository(Currency)
+    private currencyRepository: Repository<Currency>,
     private readonly s3Service: S3Service,
   ) {}
 
@@ -22,6 +26,14 @@ export class PaymentMethodsService {
     createDto: CreatePaymentMethodDto,
     file: Express.Multer.File | undefined,
   ) {
+    // Validate currency exists
+    const currency = await this.currencyRepository.findOne({
+      where: { uid: createDto.currency_id },
+    });
+    if (!currency) {
+      throw new BadRequestException('Currency not found');
+    }
+
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -42,7 +54,7 @@ export class PaymentMethodsService {
       imageUrl: imageKey,
       paymentData: createDto.payment_data as unknown,
       minimumPaymentAmount: createDto.minimum_payment_amount,
-      currency: createDto.currency,
+      currencyId: createDto.currency_id,
     };
 
     return this.create(entityLike);
@@ -65,23 +77,32 @@ export class PaymentMethodsService {
   }
 
   async findAll() {
-    const items = await this.paymentMethodRepository.find();
+    const items = await this.paymentMethodRepository.find({
+      relations: ['currency'],
+    });
     return await Promise.all(
-      items.map(async (pm) => ({
-        ...pm,
-        imageUrl:
-          (await this.s3Service.getPresignedGetUrl(pm.imageUrl)) ?? pm.imageUrl,
-      })),
+      items.map(async (pm) => {
+        const { currency, ...rest } = pm;
+        return {
+          ...rest,
+          currency: currency?.symbol || null,
+          imageUrl:
+            (await this.s3Service.getPresignedGetUrl(pm.imageUrl)) ?? pm.imageUrl,
+        };
+      }),
     );
   }
 
   async findOne(uid: string) {
     const paymentMethod = await this.paymentMethodRepository.findOne({
       where: { uid },
+      relations: ['currency'],
     });
     if (!paymentMethod) throw new NotFoundException('Payment method not found');
+    const { currency, ...rest } = paymentMethod;
     return {
-      ...paymentMethod,
+      ...rest,
+      currency: currency?.symbol || null,
       imageUrl:
         (await this.s3Service.getPresignedGetUrl(paymentMethod.imageUrl)) ??
         paymentMethod.imageUrl,
@@ -108,6 +129,16 @@ export class PaymentMethodsService {
     updateDto: UpdatePaymentMethodDto,
     file: Express.Multer.File | undefined,
   ) {
+    // Validate currency exists if currency_id is provided
+    if (updateDto.currency_id) {
+      const currency = await this.currencyRepository.findOne({
+        where: { uid: updateDto.currency_id },
+      });
+      if (!currency) {
+        throw new BadRequestException('Currency not found');
+      }
+    }
+
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -130,7 +161,7 @@ export class PaymentMethodsService {
       updateEntityLike.paymentData = updateDto.payment_data as unknown;
     if (updateDto.minimum_payment_amount)
       updateEntityLike.minimumPaymentAmount = updateDto.minimum_payment_amount;
-    if (updateDto.currency) updateEntityLike.currency = updateDto.currency;
+    if (updateDto.currency_id) updateEntityLike.currencyId = updateDto.currency_id;
 
     return this.update(uid, updateEntityLike);
   }

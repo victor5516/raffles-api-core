@@ -2,11 +2,10 @@ import {
   IsNotEmpty,
   IsString,
   IsNumber,
-  IsEnum,
+  IsUUID,
   IsOptional,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { CurrencyType } from '../entities/payment-method.entity';
 
 export class CreatePaymentMethodDto {
   @IsNotEmpty()
@@ -25,6 +24,6 @@ export class CreatePaymentMethodDto {
   minimum_payment_amount: number;
 
   @IsNotEmpty()
-  @IsEnum(CurrencyType)
-  currency: CurrencyType;
+  @IsUUID()
+  currency_id: string;
 }
