@@ -114,21 +114,16 @@ export class DashboardService {
         .createQueryBuilder('purchase')
         .select('COALESCE(SUM(purchase.totalAmount), 0)', 'sum')
         .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
-        .andWhere('purchase.verifiedAt IS NOT NULL')
-        .andWhere('purchase.verifiedAt >= :start', { start: args.startOfToday })
-        .andWhere('purchase.verifiedAt <= :end', { end: args.now })
+        // Totales acumulados: NO filtramos por "now" para evitar discrepancias de timezone/reloj.
         .getRawOne<{ sum: string | number }>(),
       this.purchaseRepository
         .createQueryBuilder('purchase')
         .select('COALESCE(SUM(purchase.totalAmount), 0)', 'sum')
         .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
-        .andWhere('purchase.verifiedAt IS NOT NULL')
-        .andWhere('purchase.verifiedAt >= :start', {
-          start: args.startOfYesterday,
-        })
-        .andWhere('purchase.verifiedAt <= :end', {
-          end: args.endOfYesterday,
-        })
+        .andWhere(
+          'COALESCE(purchase.verifiedAt, purchase.submittedAt) <= :end',
+          { end: args.endOfYesterday },
+        )
         .getRawOne<{ sum: string | number }>(),
     ]);
 
@@ -148,21 +143,16 @@ export class DashboardService {
         .createQueryBuilder('purchase')
         .select('COALESCE(SUM(purchase.ticketQuantity), 0)', 'sum')
         .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
-        .andWhere('purchase.verifiedAt IS NOT NULL')
-        .andWhere('purchase.verifiedAt >= :start', { start: args.startOfToday })
-        .andWhere('purchase.verifiedAt <= :end', { end: args.now })
+        // Totales acumulados: NO filtramos por "now" para evitar discrepancias de timezone/reloj.
         .getRawOne<{ sum: string | number }>(),
       this.purchaseRepository
         .createQueryBuilder('purchase')
         .select('COALESCE(SUM(purchase.ticketQuantity), 0)', 'sum')
         .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
-        .andWhere('purchase.verifiedAt IS NOT NULL')
-        .andWhere('purchase.verifiedAt >= :start', {
-          start: args.startOfYesterday,
-        })
-        .andWhere('purchase.verifiedAt <= :end', {
-          end: args.endOfYesterday,
-        })
+        .andWhere(
+          'COALESCE(purchase.verifiedAt, purchase.submittedAt) <= :end',
+          { end: args.endOfYesterday },
+        )
         .getRawOne<{ sum: string | number }>(),
     ]);
 
@@ -177,25 +167,31 @@ export class DashboardService {
     startOfYesterday: Date;
     endOfYesterday: Date;
   }): Promise<Metric> {
-    // Using query builder to avoid TypeORM date range typing inconsistencies across versions.
-    const [todayRaw, yesterdayRaw] = await Promise.all([
-      this.customerRepository
-        .createQueryBuilder('customer')
-        .select('COUNT(customer.uid)', 'count')
-        .where('customer.createdAt >= :start', { start: args.startOfToday })
-        .andWhere('customer.createdAt <= :end', { end: args.now })
+    // "Participantes": clientes únicos con compras verificadas en rifas ACTIVAS (acumulado).
+    // Para el % vs ayer: mismo conteo pero considerando compras verificadas hasta fin de ayer.
+    const [currentRaw, previousRaw] = await Promise.all([
+      this.purchaseRepository
+        .createQueryBuilder('purchase')
+        .innerJoin('purchase.raffle', 'raffle')
+        .select('COUNT(DISTINCT purchase.customerId)', 'count')
+        .where('raffle.status = :raffleStatus', { raffleStatus: RaffleStatus.ACTIVE })
+        .andWhere('purchase.status = :purchaseStatus', { purchaseStatus: PurchaseStatus.VERIFIED })
+        .andWhere('purchase.verifiedAt IS NOT NULL')
         .getRawOne<{ count: string | number }>(),
-      this.customerRepository
-        .createQueryBuilder('customer')
-        .select('COUNT(customer.uid)', 'count')
-        .where('customer.createdAt >= :start', { start: args.startOfYesterday })
-        .andWhere('customer.createdAt <= :end', { end: args.endOfYesterday })
+      this.purchaseRepository
+        .createQueryBuilder('purchase')
+        .innerJoin('purchase.raffle', 'raffle')
+        .select('COUNT(DISTINCT purchase.customerId)', 'count')
+        .where('raffle.status = :raffleStatus', { raffleStatus: RaffleStatus.ACTIVE })
+        .andWhere('purchase.status = :purchaseStatus', { purchaseStatus: PurchaseStatus.VERIFIED })
+        .andWhere('purchase.verifiedAt IS NOT NULL')
+        .andWhere('purchase.verifiedAt <= :end', { end: args.endOfYesterday })
         .getRawOne<{ count: string | number }>(),
     ]);
 
-    const today = Number(todayRaw?.count ?? 0);
-    const yesterday = Number(yesterdayRaw?.count ?? 0);
-    return this.computeChange(today, yesterday);
+    const current = Number(currentRaw?.count ?? 0);
+    const previous = Number(previousRaw?.count ?? 0);
+    return this.computeChange(current, previous);
   }
 
   private async getActiveRafflesMetric(args: {
