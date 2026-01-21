@@ -31,7 +31,7 @@ export class DashboardService {
     private readonly raffleRepository: Repository<Raffle>,
   ) {}
 
-  async getOverview() {
+  async getOverview(currencyId?: string) {
     const now = new Date();
     const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
@@ -53,6 +53,7 @@ export class DashboardService {
         now,
         startOfYesterday,
         endOfYesterday,
+        currencyId,
       }),
       this.getTicketsSoldMetric({
         startOfToday,
@@ -108,18 +109,29 @@ export class DashboardService {
     now: Date;
     startOfYesterday: Date;
     endOfYesterday: Date;
+    currencyId?: string;
   }): Promise<Metric> {
     const [todayRaw, yesterdayRaw] = await Promise.all([
       this.purchaseRepository
         .createQueryBuilder('purchase')
+        .innerJoin('purchase.paymentMethod', 'paymentMethod')
         .select('COALESCE(SUM(purchase.totalAmount), 0)', 'sum')
         .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .andWhere(
+          args.currencyId ? 'paymentMethod.currencyId = :currencyId' : '1=1',
+          { currencyId: args.currencyId },
+        )
         // Totales acumulados: NO filtramos por "now" para evitar discrepancias de timezone/reloj.
         .getRawOne<{ sum: string | number }>(),
       this.purchaseRepository
         .createQueryBuilder('purchase')
+        .innerJoin('purchase.paymentMethod', 'paymentMethod')
         .select('COALESCE(SUM(purchase.totalAmount), 0)', 'sum')
         .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .andWhere(
+          args.currencyId ? 'paymentMethod.currencyId = :currencyId' : '1=1',
+          { currencyId: args.currencyId },
+        )
         .andWhere(
           'COALESCE(purchase.verifiedAt, purchase.submittedAt) <= :end',
           { end: args.endOfYesterday },

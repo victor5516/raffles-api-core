@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Purchase, PurchaseStatus } from './entities/purchase.entity';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
 import { Customer } from 'src/modules/customers/entities/customer.entity';
@@ -26,10 +26,6 @@ export class PurchasesService {
     private purchaseRepository: Repository<Purchase>,
     @InjectRepository(Ticket)
     private ticketRepository: Repository<Ticket>,
-    @InjectRepository(Customer)
-    private customerRepository: Repository<Customer>,
-    @InjectRepository(Raffle)
-    private raffleRepository: Repository<Raffle>,
     private dataSource: DataSource,
     private readonly s3Service: S3Service,
     private readonly sqsService: SqsService,
@@ -101,87 +97,84 @@ export class PurchasesService {
     return createdPurchase;
   }
 
+  private async assignTickets(
+    manager: EntityManager,
+    purchase: Purchase,
+  ): Promise<void> {
+    // Lock the raffle row to prevent concurrent allocations (over-selling).
+    const raffle = await manager.findOne(Raffle, {
+      where: { uid: purchase.raffleId },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!raffle) throw new NotFoundException('Raffle not found');
+
+    // Get already sold tickets for this raffle (optimized query on the array column).
+    const soldTicketsRaw = await manager.query(
+      `SELECT unnest("ticket_numbers") as num
+       FROM purchase
+       WHERE "raffle_id" = $1
+         AND "ticket_numbers" IS NOT NULL
+         AND uid != $2`,
+      [raffle.uid, purchase.uid],
+    );
+
+    const soldSet = new Set<number>(
+      soldTicketsRaw.map((s: { num: number }) => Number(s.num)),
+    );
+
+    const available = raffle.totalTickets - soldSet.size;
+    if (available < purchase.ticketQuantity) {
+      throw new ConflictException('Not enough tickets available.');
+    }
+
+    // Smart random generation (0..totalTickets-1), avoiding collisions with sold + in-flight.
+    const toAssign: number[] = [];
+    const maxAttempts = purchase.ticketQuantity * 10;
+    let attempts = 0;
+
+    while (toAssign.length < purchase.ticketQuantity && attempts < maxAttempts) {
+      const randomNum = Math.floor(Math.random() * raffle.totalTickets);
+      if (!soldSet.has(randomNum)) {
+        toAssign.push(randomNum);
+        soldSet.add(randomNum);
+      }
+      attempts++;
+    }
+
+    if (toAssign.length < purchase.ticketQuantity) {
+      throw new ConflictException('Could not assign tickets, please try again.');
+    }
+
+    purchase.ticketNumbers = toAssign;
+    await manager.save(Purchase, purchase);
+  }
+
   async updateStatus(uid: string, updateDto: UpdatePurchaseStatusDto) {
     const { status } = updateDto;
 
     return this.dataSource.transaction(async (manager) => {
       const purchase = await manager.findOne(Purchase, {
         where: { uid },
-        relations: ['raffle'],
       });
 
       if (!purchase) throw new NotFoundException('Purchase not found');
-
-      // Pessimistic Lock to prevent over-selling
-      const raffle = await manager.findOne(Raffle, {
-        where: { uid: purchase.raffleId },
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!raffle) throw new NotFoundException('Raffle not found');
-
-      if (purchase.status === PurchaseStatus.VERIFIED) {
-        throw new BadRequestException('Purchase has already been verified.');
-      }
+      const wasVerified = purchase.status === PurchaseStatus.VERIFIED;
+      if (wasVerified) throw new BadRequestException('Purchase has already been verified.');
 
       purchase.status = status;
       if (status === PurchaseStatus.VERIFIED) {
         purchase.verifiedAt = new Date();
       }
 
-      // Save initial status update
-      await manager.save(Purchase, purchase);
-      let assignedTickets: number[] = [];
-
-      if (status === PurchaseStatus.VERIFIED) {
-        const { ticketQuantity } = purchase;
-
-        // 1. Get already sold tickets for this raffle (Optimized query)
-        // We query the new ticketNumbers array column directly
-        const soldTicketsRaw = await manager.query(
-          `SELECT unnest("ticket_numbers") as num FROM purchase WHERE "raffle_id" = $1 AND "ticket_numbers" IS NOT NULL`,
-          [raffle.uid],
-        );
-        const soldSet = new Set<number>(
-          soldTicketsRaw.map((s: { num: number }) => s.num),
-        );
-
-        // 2. Validate availability
-        const available = raffle.totalTickets - soldSet.size;
-        if (available < ticketQuantity) {
-          throw new ConflictException('Not enough tickets available.');
-        }
-
-        // 3. Smart Random Generation
-        const toAssign: number[] = [];
-        const maxAttempts = ticketQuantity * 10;
-        let attempts = 0;
-
-        while (toAssign.length < ticketQuantity && attempts < maxAttempts) {
-          const randomNum = Math.floor(Math.random() * raffle.totalTickets);
-          if (!soldSet.has(randomNum)) {
-            toAssign.push(randomNum);
-            soldSet.add(randomNum); // Avoid duplicates in current batch
-          }
-          attempts++;
-        }
-
-        if (toAssign.length < ticketQuantity) {
-          throw new ConflictException(
-            'Could not assign consecutive tickets, please try again.',
-          );
-        }
-
-        // 4. Save to Purchase (Fast read)
-        purchase.ticketNumbers = toAssign;
+      if (status === PurchaseStatus.VERIFIED && !wasVerified) {
+        await this.assignTickets(manager, purchase);
+      } else {
         await manager.save(Purchase, purchase);
-
-        assignedTickets = toAssign;
       }
 
       return {
         ...purchase,
-        tickets: assignedTickets,
+        tickets: purchase.ticketNumbers ?? [],
       };
     });
   }
@@ -329,86 +322,95 @@ export class PurchasesService {
   async processAiWebhook(webhook: AiWebhookDto) {
     const { purchaseId, aiResult } = webhook;
 
-    const purchase = await this.purchaseRepository.findOne({
-      where: { uid: purchaseId },
-      relations: ['paymentMethod', 'paymentMethod.currency'],
-    });
-    if (!purchase) throw new NotFoundException('Purchase not found');
+    return this.dataSource.transaction(async (manager) => {
+      const purchase = await manager.findOne(Purchase, {
+        where: { uid: purchaseId },
+        relations: ['raffle', 'paymentMethod', 'paymentMethod.currency'],
+      });
+      if (!purchase) throw new NotFoundException('Purchase not found');
 
-    purchase.aiAnalysisResult = aiResult ?? null;
+      const wasVerified = purchase.status === PurchaseStatus.VERIFIED;
 
-    // Define structure for type safety
-    interface ReceiptData {
-      amount: number | null;
-      currency: string | null;
-      reference: string | null;
-    }
+      purchase.aiAnalysisResult = aiResult ?? null;
 
-    const aiData = aiResult as ReceiptData;
+      // Define structure for type safety
+      interface ReceiptData {
+        amount: number | null;
+        currency: string | null;
+        reference: string | null;
+      }
 
-    // Helper function to serialize purchase with currency as symbol
-    const serializePurchase = (p: Purchase) => {
-      const { currency, ...paymentMethodRest } = p.paymentMethod || {};
-      return {
-        ...p,
-        paymentMethod: p.paymentMethod
-          ? {
-              ...paymentMethodRest,
-              currency: currency?.symbol || null,
-            }
-          : p.paymentMethod,
+      const aiData = aiResult as ReceiptData;
+
+      // Helper function to serialize purchase with currency as symbol
+      const serializePurchase = (p: Purchase) => {
+        const { currency, ...paymentMethodRest } = p.paymentMethod || {};
+        return {
+          ...p,
+          paymentMethod: p.paymentMethod
+            ? {
+                ...paymentMethodRest,
+                currency: currency?.symbol || null,
+              }
+            : p.paymentMethod,
+        };
       };
-    };
 
-    // 1. Check if AI data is sufficient
-    if (!aiData?.amount || !aiData?.currency || !aiData?.reference) {
-      purchase.status = PurchaseStatus.MANUAL_REVIEW;
-      const savedPurchase = await this.purchaseRepository.save(purchase);
-      return serializePurchase(savedPurchase);
-    }
+      // 1. Check if AI data is sufficient
+      if (!aiData?.amount || !aiData?.currency || !aiData?.reference) {
+        purchase.status = PurchaseStatus.MANUAL_REVIEW;
+        const savedPurchase = await manager.save(Purchase, purchase);
+        return serializePurchase(savedPurchase);
+      }
 
-    // 2. Check for duplicates by reference
-    const cleanAiRef = String(aiData.reference).replace(/\D/g, '');
+      // 2. Check for duplicates by reference
+      const cleanAiRef = String(aiData.reference).replace(/\D/g, '');
 
-    // Use REGEXP_REPLACE to compare only digits from the database column
-    // This ensures that "123-456" in DB matches "123456" from AI
-    const existingWithRef = await this.purchaseRepository
-      .createQueryBuilder('p')
-      .where('p.uid != :uid', { uid: purchaseId })
-      .andWhere("REGEXP_REPLACE(p.bank_reference, '\\D', '', 'g') LIKE :ref", {
-        ref: `%${cleanAiRef}%`,
-      })
-      .getOne();
+      // Use REGEXP_REPLACE to compare only digits from the database column
+      // This ensures that "123-456" in DB matches "123456" from AI
+      const existingWithRef = await manager
+        .getRepository(Purchase)
+        .createQueryBuilder('p')
+        .where('p.uid != :uid', { uid: purchaseId })
+        .andWhere("REGEXP_REPLACE(p.bank_reference, '\\D', '', 'g') LIKE :ref", {
+          ref: `%${cleanAiRef}%`,
+        })
+        .getOne();
 
-    if (existingWithRef) {
-      purchase.status = PurchaseStatus.DUPLICATED;
-      const savedPurchase = await this.purchaseRepository.save(purchase);
-      return serializePurchase(savedPurchase);
-    }
+      if (existingWithRef) {
+        purchase.status = PurchaseStatus.DUPLICATED;
+        const savedPurchase = await manager.save(Purchase, purchase);
+        return serializePurchase(savedPurchase);
+      }
 
-    // 3. Verify amount
-    const amountDiff = Math.abs(purchase.totalAmount - aiData.amount);
-    const isAmountValid = amountDiff < 0.01;
+      // 3. Verify amount
+      const amountDiff = Math.abs(purchase.totalAmount - aiData.amount);
+      const isAmountValid = amountDiff < 0.01;
 
-    // 4. Verify currency
-    const expectedCurrency = purchase.paymentMethod?.currency;
-    const isCurrencyValid = expectedCurrency?.symbol === aiData.currency;
+      // 4. Verify currency
+      const expectedCurrency = purchase.paymentMethod?.currency;
+      const isCurrencyValid = expectedCurrency?.symbol === aiData.currency;
 
-    // 5. Verify reference (fuzzy match)
-    const cleanUserRef = purchase.bankReference.replace(/\D/g, '');
-    const isRefValid =
-      cleanAiRef.endsWith(cleanUserRef) || cleanUserRef.endsWith(cleanAiRef);
+      // 5. Verify reference (fuzzy match)
+      const cleanUserRef = purchase.bankReference.replace(/\D/g, '');
+      const isRefValid =
+        cleanAiRef.endsWith(cleanUserRef) || cleanUserRef.endsWith(cleanAiRef);
 
-    if (isAmountValid && isCurrencyValid && isRefValid) {
-      purchase.status = PurchaseStatus.VERIFIED;
-      purchase.verifiedAt = new Date();
-    } else {
-      purchase.status = PurchaseStatus.MANUAL_REVIEW;
-    }
+      if (isAmountValid && isCurrencyValid && isRefValid) {
+        purchase.status = PurchaseStatus.VERIFIED;
+        purchase.verifiedAt = new Date();
+      } else {
+        purchase.status = PurchaseStatus.MANUAL_REVIEW;
+      }
 
-    const updatedPurchase = await this.purchaseRepository.save(purchase);
-    console.log('Updated purchase:', updatedPurchase);
-    return serializePurchase(updatedPurchase);
+      if (purchase.status === PurchaseStatus.VERIFIED && !wasVerified) {
+        await this.assignTickets(manager, purchase);
+        return serializePurchase(purchase);
+      }
+
+      const updatedPurchase = await manager.save(Purchase, purchase);
+      return serializePurchase(updatedPurchase);
+    });
   }
 
 
