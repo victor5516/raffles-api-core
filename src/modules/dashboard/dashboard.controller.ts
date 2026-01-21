@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
 
@@ -8,8 +8,8 @@ export class DashboardController {
 
   @Get('overview')
   @AdminAuth()
-  getOverview() {
-    return this.dashboardService.getOverview();
+  getOverview(@Query('currencyId') currencyId?: string) {
+    return this.dashboardService.getOverview(currencyId);
   }
 }
 

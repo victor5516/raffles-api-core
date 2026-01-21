@@ -8,12 +8,16 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as ExcelJS from 'exceljs';
 import { Purchase, PurchaseStatus } from './entities/purchase.entity';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
 import { Customer } from 'src/modules/customers/entities/customer.entity';
 import { Raffle } from 'src/modules/raffles/entities/raffle.entity';
+import { PaymentMethod } from 'src/modules/payments/entities/payment-method.entity';
+import { Currency } from 'src/modules/currencies/entities/currency.entity';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
+import { ExportPurchasesDto } from './dto/export-purchases.dto';
 import { S3Service } from '../../common/s3/s3.service';
 import { SqsService } from '../../common/sqs/sqs.service';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
@@ -27,6 +31,10 @@ export class PurchasesService {
     private purchaseRepository: Repository<Purchase>,
     @InjectRepository(Ticket)
     private ticketRepository: Repository<Ticket>,
+    @InjectRepository(PaymentMethod)
+    private paymentMethodRepository: Repository<PaymentMethod>,
+    @InjectRepository(Currency)
+    private currencyRepository: Repository<Currency>,
     private dataSource: DataSource,
     private readonly s3Service: S3Service,
     private readonly sqsService: SqsService,
@@ -212,6 +220,8 @@ export class PurchasesService {
       typeof query.nationalId === 'string' ? query.nationalId : undefined;
     const currency =
       typeof query.currency === 'string' ? query.currency : undefined;
+    const paymentMethodId =
+      typeof query.paymentMethodId === 'string' ? query.paymentMethodId : undefined;
     const ticketNumberRaw = query.ticketNumber;
     const ticketNumber =
       typeof ticketNumberRaw === 'string' || typeof ticketNumberRaw === 'number'
@@ -254,6 +264,9 @@ export class PurchasesService {
     }
     if (currency) {
       qb.andWhere('currency.symbol = :currency', { currency });
+    }
+    if (paymentMethodId) {
+      qb.andWhere('purchase.paymentMethodId = :paymentMethodId', { paymentMethodId });
     }
     if (ticketNumber !== undefined && !Number.isNaN(ticketNumber)) {
       qb.andWhere(':ticketNumber = ANY(purchase.ticketNumbers)', { ticketNumber });
@@ -497,5 +510,209 @@ export class PurchasesService {
       message: `Migrated ${processed} purchases`,
       remaining: purchases.length === BATCH_SIZE,
     };
+  }
+
+  async exportPurchases(filters: ExportPurchasesDto): Promise<Buffer> {
+    const { raffleId, currency, status, nationalId, paymentMethodId, ticketNumber } = filters;
+
+    // 1. Get all payment methods for the requested currency
+    const paymentMethodsQb = this.paymentMethodRepository
+      .createQueryBuilder('pm')
+      .leftJoinAndSelect('pm.currency', 'currency');
+
+    if (currency) {
+      paymentMethodsQb.andWhere('currency.symbol = :currency', { currency });
+    }
+
+    const paymentMethods = await paymentMethodsQb.getMany();
+
+    // 2. Query all purchases matching filters (no pagination)
+    const qb = this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .leftJoinAndSelect('purchase.customer', 'customer')
+      .leftJoinAndSelect('purchase.raffle', 'raffle')
+      .leftJoinAndSelect('purchase.paymentMethod', 'paymentMethod')
+      .leftJoinAndSelect('paymentMethod.currency', 'pmCurrency')
+      .orderBy('purchase.submittedAt', 'DESC');
+
+    if (raffleId) {
+      qb.andWhere('purchase.raffleId = :raffleId', { raffleId });
+    }
+    if (status) {
+      qb.andWhere('purchase.status = :status', { status });
+    }
+    if (nationalId) {
+      qb.andWhere('customer.nationalId LIKE :nationalId', {
+        nationalId: `%${nationalId}%`,
+      });
+    }
+    if (currency) {
+      qb.andWhere('pmCurrency.symbol = :currency', { currency });
+    }
+    if (paymentMethodId) {
+      qb.andWhere('purchase.paymentMethodId = :paymentMethodId', { paymentMethodId });
+    }
+    if (ticketNumber !== undefined && !Number.isNaN(ticketNumber)) {
+      qb.andWhere(':ticketNumber = ANY(purchase.ticketNumbers)', { ticketNumber });
+    }
+
+    const purchases = await qb.getMany();
+
+    // 4. Group purchases by payment method
+    const purchasesByPaymentMethod = new Map<string, Purchase[]>();
+    for (const pm of paymentMethods) {
+      purchasesByPaymentMethod.set(pm.uid, []);
+    }
+    for (const purchase of purchases) {
+      const pmId = purchase.paymentMethodId;
+      if (purchasesByPaymentMethod.has(pmId)) {
+        purchasesByPaymentMethod.get(pmId)!.push(purchase);
+      }
+    }
+
+    // 5. Create Excel workbook
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Raffles Admin';
+    workbook.created = new Date();
+
+    const statusLabels: Record<string, string> = {
+      [PurchaseStatus.PENDING]: 'Pendiente',
+      [PurchaseStatus.VERIFIED]: 'Verificado',
+      [PurchaseStatus.REJECTED]: 'Rechazado',
+      [PurchaseStatus.MANUAL_REVIEW]: 'Revisión Manual',
+      [PurchaseStatus.DUPLICATED]: 'Duplicado',
+    };
+
+    // Helper to add headers to a worksheet
+    const addHeaders = (worksheet: ExcelJS.Worksheet) => {
+      worksheet.columns = [
+        { header: 'Fecha', key: 'date', width: 18 },
+        { header: 'Cliente', key: 'customer', width: 25 },
+        { header: 'Cédula', key: 'nationalId', width: 15 },
+        { header: 'Email', key: 'email', width: 30 },
+        { header: 'Teléfono', key: 'phone', width: 15 },
+        { header: 'Tickets', key: 'ticketQty', width: 10 },
+        { header: 'Monto', key: 'amount', width: 15 },
+        { header: 'Referencia', key: 'reference', width: 20 },
+        { header: 'Estado', key: 'status', width: 15 },
+        { header: 'Rifa', key: 'raffle', width: 25 },
+      ];
+
+      // Style header row
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFE0E0E0' },
+      };
+    };
+
+    // Helper to add purchase rows
+    const addPurchaseRows = (worksheet: ExcelJS.Worksheet, purchases: Purchase[]) => {
+      for (const purchase of purchases) {
+        worksheet.addRow({
+          date: new Date(purchase.submittedAt).toLocaleString('es-VE'),
+          customer: purchase.customer?.fullName || '-',
+          nationalId: purchase.customer?.nationalId || '-',
+          email: purchase.customer?.email || '-',
+          phone: purchase.customer?.phone || '-',
+          ticketQty: purchase.ticketQuantity,
+          amount: Number(purchase.totalAmount).toFixed(2),
+          reference: purchase.bankReference || '-',
+          status: statusLabels[purchase.status] || purchase.status,
+          raffle: purchase.raffle?.title || '-',
+        });
+      }
+    };
+
+    // Track totals for final summary
+    const totals: { paymentMethod: string; currency: string; total: number; totalBs: number }[] = [];
+
+    // 6. Create a worksheet for each payment method
+    for (const pm of paymentMethods) {
+      const pmPurchases = purchasesByPaymentMethod.get(pm.uid) || [];
+      // Sanitize worksheet name (Excel limits to 31 chars and some special chars are not allowed)
+      const sheetName = pm.name.slice(0, 31).replace(/[*?:/\\[\]]/g, '-');
+      const worksheet = workbook.addWorksheet(sheetName);
+
+      addHeaders(worksheet);
+      addPurchaseRows(worksheet, pmPurchases);
+
+      // Calculate total for this payment method
+      const pmTotal = pmPurchases.reduce((sum, p) => sum + Number(p.totalAmount), 0);
+      const pmCurrencySymbol = pm.currency?.symbol || 'USD';
+
+      // When filtering by currency, all totals are already in that currency
+      // No conversion needed - just sum up the amounts
+      totals.push({
+        paymentMethod: pm.name,
+        currency: pmCurrencySymbol,
+        total: pmTotal,
+        totalBs: pmTotal, // Same value since we're already in the filtered currency
+      });
+
+      // Add total row at the end
+      worksheet.addRow({});
+      const totalRow = worksheet.addRow({
+        date: '',
+        customer: '',
+        nationalId: '',
+        email: '',
+        phone: 'TOTAL:',
+        ticketQty: pmPurchases.reduce((sum, p) => sum + p.ticketQuantity, 0),
+        amount: pmTotal.toFixed(2),
+        reference: '',
+        status: '',
+        raffle: '',
+      });
+      totalRow.font = { bold: true };
+    }
+
+    // 7. Create summary worksheet with totals
+    const summaryCurrency = currency || 'Todas';
+    const summarySheet = workbook.addWorksheet(`Totales ${summaryCurrency}`);
+    summarySheet.columns = [
+      { header: 'Método de Pago', key: 'paymentMethod', width: 30 },
+      { header: 'Moneda', key: 'currency', width: 10 },
+      { header: 'Total Original', key: 'total', width: 18 },
+      { header: `Total en ${summaryCurrency}`, key: 'totalConverted', width: 18 },
+    ];
+
+    summarySheet.getRow(1).font = { bold: true };
+    summarySheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' },
+    };
+
+    let grandTotal = 0;
+    for (const t of totals) {
+      summarySheet.addRow({
+        paymentMethod: t.paymentMethod,
+        currency: t.currency,
+        total: t.total.toFixed(2),
+        totalConverted: t.totalBs.toFixed(2),
+      });
+      grandTotal += t.totalBs;
+    }
+
+    // Grand total row
+    summarySheet.addRow({});
+    const grandTotalRow = summarySheet.addRow({
+      paymentMethod: 'TOTAL GENERAL',
+      currency: '',
+      total: '',
+      totalConverted: grandTotal.toFixed(2),
+    });
+    grandTotalRow.font = { bold: true };
+    grandTotalRow.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFFD700' },
+    };
+
+    // 8. Generate buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 }
