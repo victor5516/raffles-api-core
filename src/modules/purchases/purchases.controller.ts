@@ -38,6 +38,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
+import { AuditWebhookDto } from './dto/audit-webhook.dto';
 import { ConfigService } from '@nestjs/config';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
 
@@ -245,17 +246,51 @@ export class PurchasesController {
     return this.purchasesService.processAiWebhook(webhook);
   }
 
-  @Post('migrate-tickets')
-  @AdminAuth()
-  @ApiOperation({ summary: 'Migrar tickets (endpoint administrativo)' })
-  @ApiBearerAuth('JWT-auth')
-  @ApiResponse({
-    status: 200,
-    description: 'Migración completada',
+  @Post('webhooks/audit')
+  @UseInterceptors(
+    FileInterceptor('payment_screenshot', {
+      storage: memoryStorage(),
+    }),
+  )
+  @ApiOperation({ summary: 'Webhook para crear compras desde auditoría (sistema externo)' })
+  @ApiHeader({
+    name: 'x-internal-secret',
+    description: 'Firma secreta para autenticar el webhook',
+    required: true,
   })
-  @ApiResponse({ status: 401, description: 'No autorizado' })
-  migrateTickets() {
-    return this.purchasesService.migrateTickets();
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ type: AuditWebhookDto })
+  @ApiFile('payment_screenshot', false)
+  @ApiResponse({
+    status: 201,
+    description: 'Webhook de auditoría procesado exitosamente',
+  })
+  @ApiResponse({ status: 401, description: 'Firma inválida o faltante' })
+  @ApiResponse({ status: 400, description: 'Datos inválidos' })
+  async processAuditWebhook(
+    @Body() webhook: AuditWebhookDto,
+    @UploadedFile() file: Express.Multer.File,
+    @Headers('x-internal-secret') signature: string,
+  ) {
+    const auditWebhookSignature =
+      this.configService.getOrThrow<string>('AUDIT_WEBHOOK_SIGNATURE');
+    if (!signature || signature !== auditWebhookSignature) {
+      throw new UnauthorizedException('Signature is required');
+    }
+
+    // In multipart/form-data, arrays/objects may arrive as JSON strings
+    if (typeof (webhook as unknown as { ticket_numbers?: unknown }).ticket_numbers === 'string') {
+      try {
+        const parsed: unknown = JSON.parse(
+          (webhook as unknown as { ticket_numbers: string }).ticket_numbers,
+        );
+        (webhook as unknown as { ticket_numbers?: unknown }).ticket_numbers = parsed;
+      } catch {
+        // leave as-is; validation/handling will decide
+      }
+    }
+
+    return this.purchasesService.processAuditWebhook(webhook, file);
   }
 
   @Sse('sse/stream')

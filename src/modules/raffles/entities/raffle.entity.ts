@@ -47,6 +47,9 @@ export class Raffle {
   })
   status: RaffleStatus;
 
+  @Column({name: 'external_id', nullable: true})
+  externalId: string;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

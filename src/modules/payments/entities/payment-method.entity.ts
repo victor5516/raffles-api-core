@@ -25,6 +25,8 @@ export class PaymentMethod {
   @ManyToOne(() => Currency, { eager: true })
   @JoinColumn({ name: 'currency_id' })
   currency: Currency;
+  @Column({ name: 'external_id', nullable: true })
+  externalId: string;
 
   @OneToMany(() => Purchase, (purchase) => purchase.paymentMethod)
   purchases: Purchase[];
