@@ -119,7 +119,7 @@ export class PurchasesService {
         ticketQuantity: Number(webhook.ticket_quantity),
         paymentScreenshotUrl: screenshotKey,
         // If audited system sends specific status, use it, else default to VERIFIED for audits
-        status: (webhook.status as PurchaseStatus) || PurchaseStatus.VERIFIED,
+        status: (webhook.status as PurchaseStatus) || PurchaseStatus.PENDING,
         // Use original creation date if provided
         submittedAt: webhook.created_at ? new Date(webhook.created_at) : new Date(),
         verifiedAt: webhook.status === PurchaseStatus.VERIFIED ? new Date() : null,
