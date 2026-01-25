@@ -82,6 +82,31 @@ export class DashboardService {
     };
   }
 
+  async getTopCustomers(raffleId: string) {
+    const topCustomers = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .innerJoin('purchase.customer', 'customer')
+      .select('customer.uid', 'uid')
+      .addSelect('customer.fullName', 'fullName')
+      .addSelect('customer.email', 'email')
+      .addSelect('SUM(purchase.ticketQuantity)', 'totalTickets')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+      .groupBy('customer.uid')
+      .addGroupBy('customer.fullName')
+      .addGroupBy('customer.email')
+      .orderBy('SUM(purchase.ticketQuantity)', 'DESC')
+      .limit(10)
+      .getRawMany();
+
+    return topCustomers.map((c) => ({
+      uid: c.uid,
+      name: c.fullName,
+      email: c.email,
+      totalTickets: Number(c.totalTickets),
+    }));
+  }
+
   private computeChange(current: number, previous: number): Metric {
     if (!Number.isFinite(current)) current = 0;
     if (!Number.isFinite(previous)) previous = 0;
