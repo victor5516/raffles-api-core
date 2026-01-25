@@ -56,6 +56,9 @@ export class Purchase {
   @Column({ name: 'bank_reference' })
   bankReference: string;
 
+  @Column({ name: 'notes', type: 'text', nullable: true })
+  notes: string;
+
   @Column({
     type: 'enum',
     enum: PurchaseStatus,

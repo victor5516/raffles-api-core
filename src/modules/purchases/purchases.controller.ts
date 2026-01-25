@@ -32,6 +32,7 @@ import { Observable, fromEvent, map, merge } from 'rxjs';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PurchasesService } from './purchases.service';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { ExportPurchasesDto } from './dto/export-purchases.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -188,6 +189,31 @@ export class PurchasesController {
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
   findOne(@Param('uid') uid: string) {
     return this.purchasesService.findOne(uid);
+  }
+
+  @Patch(':uid')
+  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @ApiOperation({ summary: 'Actualizar una compra (notas)' })
+  @ApiBearerAuth('JWT-auth')
+  @ApiParam({
+    name: 'uid',
+    description: 'UID de la compra a actualizar',
+    type: String,
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Compra actualizada exitosamente',
+  })
+  @ApiResponse({ status: 400, description: 'Datos inválidos' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({ status: 404, description: 'Compra no encontrada' })
+  update(
+    @Param('uid') uid: string,
+    @Body() updateDto: UpdatePurchaseDto,
+  ) {
+    return this.purchasesService.update(uid, updateDto);
   }
 
   @Patch(':uid/status')

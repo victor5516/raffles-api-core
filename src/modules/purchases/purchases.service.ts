@@ -21,6 +21,7 @@ import {
 import { PaymentMethod } from 'src/modules/payments/entities/payment-method.entity';
 import { Currency } from 'src/modules/currencies/entities/currency.entity';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { ExportPurchasesDto } from './dto/export-purchases.dto';
 import { S3Service } from '../../common/s3/s3.service';
@@ -308,6 +309,17 @@ export class PurchasesService {
 
       return purchase;
     });
+  }
+
+  async update(uid: string, updateDto: UpdatePurchaseDto) {
+    const purchase = await this.purchaseRepository.findOne({ where: { uid } });
+    if (!purchase) throw new NotFoundException('Purchase not found');
+
+    if (updateDto.notes !== undefined) {
+      purchase.notes = updateDto.notes;
+    }
+
+    return await this.purchaseRepository.save(purchase);
   }
 
   async findAll(query: Record<string, unknown>) {
