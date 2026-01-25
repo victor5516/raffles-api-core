@@ -36,7 +36,10 @@ import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { ExportPurchasesDto } from './dto/export-purchases.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
+import { AdminAuth, Auth } from '../auth/decorators/admin-auth.decorator';
+import { AdminRole } from '../auth/enums/admin-role.enum';
+import { ActiveUser } from '../auth/decorators/active-user.decorator';
+import { Admin } from '../auth/entities/admin.entity';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
 import { AuditWebhookDto } from './dto/audit-webhook.dto';
 import { ConfigService } from '@nestjs/config';
@@ -84,7 +87,9 @@ export class PurchasesController {
   }
 
   @Get()
+  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
   @ApiOperation({ summary: 'Obtener todas las compras con filtros opcionales' })
+  @ApiBearerAuth('JWT-auth')
   @ApiQuery({
     name: 'raffleId',
     required: false,
@@ -125,12 +130,14 @@ export class PurchasesController {
     status: 200,
     description: 'Lista de compras obtenida exitosamente',
   })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   findAll(@Query() query: Record<string, unknown>) {
     return this.purchasesService.findAll(query);
   }
 
   @Post('export')
-  @AdminAuth()
+  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
   @ApiOperation({ summary: 'Exportar compras a Excel' })
   @ApiBearerAuth('JWT-auth')
   @ApiProduces('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -184,7 +191,7 @@ export class PurchasesController {
   }
 
   @Patch(':uid/status')
-  @AdminAuth()
+  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
   @ApiOperation({ summary: 'Actualizar el estado de una compra' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
@@ -199,16 +206,18 @@ export class PurchasesController {
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
   updateStatus(
     @Param('uid') uid: string,
     @Body() updateDto: UpdatePurchaseStatusDto,
+    @ActiveUser() user: Admin,
   ) {
-    return this.purchasesService.updateStatus(uid, updateDto);
+    return this.purchasesService.updateStatus(uid, updateDto, user.role);
   }
 
   @Delete(':uid')
-  @AdminAuth()
+  @Auth(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Eliminar una compra' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
@@ -222,6 +231,7 @@ export class PurchasesController {
     description: 'Compra eliminada exitosamente',
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Solo Super Admin puede eliminar compras' })
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
   remove(@Param('uid') uid: string) {
     return this.purchasesService.remove(uid);

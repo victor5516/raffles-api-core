@@ -4,6 +4,7 @@ import {
   PrimaryGeneratedColumn,
   CreateDateColumn,
 } from 'typeorm';
+import { AdminRole } from '../enums/admin-role.enum';
 
 @Entity('admin')
 export class Admin {
@@ -18,6 +19,13 @@ export class Admin {
 
   @Column({ name: 'password_hash' })
   passwordHash: string;
+
+  @Column({
+    type: 'enum',
+    enum: AdminRole,
+    default: AdminRole.VERIFIER,
+  })
+  role: AdminRole;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository, ILike } from 'typeorm';
@@ -26,6 +27,7 @@ import { S3Service } from '../../common/s3/s3.service';
 import { SqsService } from '../../common/sqs/sqs.service';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
 import { AuditWebhookDto } from './dto/audit-webhook.dto';
+import { AdminRole } from '../auth/enums/admin-role.enum';
 
 @Injectable()
 export class PurchasesService {
@@ -272,18 +274,21 @@ export class PurchasesService {
   /**
    * Manual Status Update by Admin.
    * Triggers ticket assignment if status changes to VERIFIED.
+   * Only SUPER_ADMIN can revert a purchase that is already VERIFIED.
    */
-  async updateStatus(uid: string, updateDto: UpdatePurchaseStatusDto) {
+  async updateStatus(uid: string, updateDto: UpdatePurchaseStatusDto, adminRole: AdminRole) {
     const { status } = updateDto;
 
     return this.dataSource.transaction(async (manager) => {
       const purchase = await manager.findOne(Purchase, { where: { uid } });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
-      const wasVerified = purchase.status === PurchaseStatus.VERIFIED;
-      if (wasVerified)
-        throw new BadRequestException('Purchase has already been verified.');
+      // Business rule: Only SUPER_ADMIN can revert a verified purchase
+      if (purchase.status === PurchaseStatus.VERIFIED && adminRole !== AdminRole.SUPER_ADMIN) {
+        throw new ForbiddenException('Only Super Admin can revert a verified purchase');
+      }
 
+      const wasVerified = purchase.status === PurchaseStatus.VERIFIED;
       purchase.status = status;
 
       if (status === PurchaseStatus.VERIFIED) {
