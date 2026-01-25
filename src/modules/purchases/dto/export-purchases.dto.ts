@@ -52,4 +52,44 @@ export class ExportPurchasesDto {
   @Transform(({ value }) => (value !== undefined ? Number(value) : undefined))
   @IsNumber()
   ticketNumber?: number;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar por nombre del participante',
+    example: 'Juan Pérez',
+  })
+  @IsOptional()
+  @IsString()
+  customerName?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar por email del participante',
+    example: 'juan.perez@example.com',
+  })
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar por teléfono del participante',
+    example: '+1234567890',
+  })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar por fecha desde (formato ISO date)',
+    example: '2024-01-01',
+  })
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar por fecha hasta (formato ISO date)',
+    example: '2024-12-31',
+  })
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
 }

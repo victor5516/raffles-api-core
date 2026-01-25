@@ -339,6 +339,16 @@ export class PurchasesService {
       typeof ticketNumberRaw === 'string' || typeof ticketNumberRaw === 'number'
         ? Number(ticketNumberRaw)
         : undefined;
+    const customerName =
+      typeof query.customerName === 'string' ? query.customerName : undefined;
+    const email =
+      typeof query.email === 'string' ? query.email : undefined;
+    const phone =
+      typeof query.phone === 'string' ? query.phone : undefined;
+    const dateFrom =
+      typeof query.dateFrom === 'string' ? query.dateFrom : undefined;
+    const dateTo =
+      typeof query.dateTo === 'string' ? query.dateTo : undefined;
 
     const pageRaw = query.page;
     const limitRaw = query.limit;
@@ -386,6 +396,32 @@ export class PurchasesService {
       qb.andWhere(':ticketNumber = ANY(purchase.ticketNumbers)', {
         ticketNumber,
       });
+    }
+    if (customerName) {
+      qb.andWhere('customer.fullName ILIKE :customerName', {
+        customerName: `%${customerName}%`,
+      });
+    }
+    if (email) {
+      qb.andWhere('customer.email ILIKE :email', {
+        email: `%${email}%`,
+      });
+    }
+    if (phone) {
+      qb.andWhere('customer.phone ILIKE :phone', {
+        phone: `%${phone}%`,
+      });
+    }
+    if (dateFrom) {
+      const dateFromStart = new Date(dateFrom);
+      dateFromStart.setHours(0, 0, 0, 0);
+      qb.andWhere('purchase.submittedAt >= :dateFrom', { dateFrom: dateFromStart });
+    }
+    if (dateTo) {
+      // Add one day to include the entire end date
+      const dateToEnd = new Date(dateTo);
+      dateToEnd.setHours(23, 59, 59, 999);
+      qb.andWhere('purchase.submittedAt <= :dateTo', { dateTo: dateToEnd });
     }
 
     const [items, total] = await qb.getManyAndCount();
@@ -487,6 +523,11 @@ export class PurchasesService {
       nationalId,
       paymentMethodId,
       ticketNumber,
+      customerName,
+      email,
+      phone,
+      dateFrom,
+      dateTo,
     } = filters;
 
     // 1. Get payment methods
@@ -524,6 +565,32 @@ export class PurchasesService {
       qb.andWhere(':ticketNumber = ANY(purchase.ticketNumbers)', {
         ticketNumber,
       });
+    }
+    if (customerName) {
+      qb.andWhere('customer.fullName ILIKE :customerName', {
+        customerName: `%${customerName}%`,
+      });
+    }
+    if (email) {
+      qb.andWhere('customer.email ILIKE :email', {
+        email: `%${email}%`,
+      });
+    }
+    if (phone) {
+      qb.andWhere('customer.phone ILIKE :phone', {
+        phone: `%${phone}%`,
+      });
+    }
+    if (dateFrom) {
+      const dateFromStart = new Date(dateFrom);
+      dateFromStart.setHours(0, 0, 0, 0);
+      qb.andWhere('purchase.submittedAt >= :dateFrom', { dateFrom: dateFromStart });
+    }
+    if (dateTo) {
+      // Add one day to include the entire end date
+      const dateToEnd = new Date(dateTo);
+      dateToEnd.setHours(23, 59, 59, 999);
+      qb.andWhere('purchase.submittedAt <= :dateTo', { dateTo: dateToEnd });
     }
 
     const purchases = await qb.getMany();

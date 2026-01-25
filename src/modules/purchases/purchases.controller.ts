@@ -127,6 +127,36 @@ export class PurchasesController {
     description: 'Filtrar por número de ticket',
     type: Number,
   })
+  @ApiQuery({
+    name: 'customerName',
+    required: false,
+    description: 'Filtrar por nombre del participante',
+    type: String,
+  })
+  @ApiQuery({
+    name: 'email',
+    required: false,
+    description: 'Filtrar por email del participante',
+    type: String,
+  })
+  @ApiQuery({
+    name: 'phone',
+    required: false,
+    description: 'Filtrar por teléfono del participante',
+    type: String,
+  })
+  @ApiQuery({
+    name: 'dateFrom',
+    required: false,
+    description: 'Filtrar por fecha desde (formato ISO date)',
+    type: String,
+  })
+  @ApiQuery({
+    name: 'dateTo',
+    required: false,
+    description: 'Filtrar por fecha hasta (formato ISO date)',
+    type: String,
+  })
   @ApiResponse({
     status: 200,
     description: 'Lista de compras obtenida exitosamente',
