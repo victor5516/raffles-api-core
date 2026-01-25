@@ -10,6 +10,9 @@ export class PaymentMethod {
   @Column({ unique: true })
   name: string;
 
+  @Column({ name: 'account_holder_name', nullable: true })
+  accountHolderName: string;
+
   @Column({ name: 'image_url', nullable: true })
   imageUrl: string;
 

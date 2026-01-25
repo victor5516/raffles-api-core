@@ -51,6 +51,7 @@ export class PaymentMethodsService {
 
     const entityLike: Partial<PaymentMethod> = {
       name: createDto.name,
+      accountHolderName: createDto.accountHolderName,
       imageUrl: imageKey,
       paymentData: createDto.payment_data as unknown,
       minimumPaymentAmount: createDto.minimum_payment_amount,
@@ -162,7 +163,7 @@ export class PaymentMethodsService {
     if (updateDto.minimum_payment_amount)
       updateEntityLike.minimumPaymentAmount = updateDto.minimum_payment_amount;
     if (updateDto.currency_id) updateEntityLike.currencyId = updateDto.currency_id;
-
+    if (updateDto.accountHolderName) updateEntityLike.accountHolderName = updateDto.accountHolderName;
     return this.update(uid, updateEntityLike);
   }
 

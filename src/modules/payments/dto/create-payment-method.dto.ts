@@ -18,6 +18,14 @@ export class CreatePaymentMethodDto {
   name: string;
 
   @ApiPropertyOptional({
+    description: 'Nombre del titular de la cuenta',
+    example: 'Juan Perez',
+  })
+  @IsOptional()
+  @IsString()
+  accountHolderName?: string;
+
+  @ApiPropertyOptional({
     description: 'URL de la imagen del método de pago (se puede subir archivo o proporcionar URL)',
     example: 'https://example.com/payment-method.jpg',
   })
