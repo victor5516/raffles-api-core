@@ -5,6 +5,9 @@ import {
   Min,
   IsEmail,
   IsOptional,
+  IsArray,
+  ArrayMinSize,
+  IsInt,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -106,5 +109,18 @@ export class CreatePurchaseDto {
   @IsNumber()
   @Min(0)
   totalAmount: number;
+
+  @ApiPropertyOptional({
+    description: 'Números de tickets específicos a comprar (requerido para rifas de tipo SPECIFIC)',
+    example: [1, 5, 10, 15, 20],
+    type: [Number],
+    isArray: true,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1, { message: 'ticket_numbers must contain at least one number' })
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  ticket_numbers?: number[];
 
 }

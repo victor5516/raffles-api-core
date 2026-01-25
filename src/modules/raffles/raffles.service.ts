@@ -63,6 +63,7 @@ export class RafflesService {
       ticketPrice: createRaffleDto.ticket_price,
       totalTickets: createRaffleDto.total_tickets,
       imageUrl: createRaffleDto.image_url,
+      selectionType: createRaffleDto.selection_type,
     });
     const savedRaffle = await this.raffleRepository.save(raffle);
     const currencies = await this.currenciesService.findAll();
@@ -149,6 +150,8 @@ export class RafflesService {
     if (updateRaffleDto.image_url)
       updateData.imageUrl = updateRaffleDto.image_url;
     if (updateRaffleDto.status) updateData.status = updateRaffleDto.status;
+    if (updateRaffleDto.selection_type !== undefined)
+      updateData.selectionType = updateRaffleDto.selection_type;
 
     await this.raffleRepository.update(uid, updateData);
     return this.findOne(uid);

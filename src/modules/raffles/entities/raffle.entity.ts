@@ -14,6 +14,11 @@ export enum RaffleStatus {
   CLOSED = 'closed',
 }
 
+export enum RaffleSelectionType {
+  RANDOM = 'random',
+  SPECIFIC = 'specific',
+}
+
 @Entity('raffle')
 export class Raffle {
   @PrimaryGeneratedColumn('uuid')
@@ -49,6 +54,14 @@ export class Raffle {
     default: RaffleStatus.DRAFT,
   })
   status: RaffleStatus;
+
+  @Column({
+    type: 'enum',
+    enum: RaffleSelectionType,
+    default: RaffleSelectionType.RANDOM,
+    name: 'selection_type',
+  })
+  selectionType: RaffleSelectionType;
 
   @Column({name: 'external_id', nullable: true})
   externalId: string;

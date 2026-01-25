@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { RaffleStatus } from '../entities/raffle.entity';
+import { RaffleStatus, RaffleSelectionType } from '../entities/raffle.entity';
 
 export class CreateRaffleDto {
   @ApiProperty({
@@ -88,6 +88,16 @@ export class CreateRaffleDto {
   @IsOptional()
   @IsEnum(RaffleStatus)
   status?: RaffleStatus;
+
+  @ApiPropertyOptional({
+    description: 'Tipo de selección de tickets',
+    enum: RaffleSelectionType,
+    example: RaffleSelectionType.RANDOM,
+    default: RaffleSelectionType.RANDOM,
+  })
+  @IsOptional()
+  @IsEnum(RaffleSelectionType)
+  selection_type?: RaffleSelectionType;
 
   // image handled by interceptor, url string added in controller/service
   @ApiPropertyOptional({
