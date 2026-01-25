@@ -38,6 +38,16 @@ export class CreateRaffleDto {
   @IsNumber()
   digits_length: number;
 
+  @ApiPropertyOptional({
+    description: 'Cantidad mínima de tickets por compra',
+    example: 1,
+    type: Number,
+  })
+  @IsOptional()
+  @Transform(({ value }) => parseInt(String(value)))
+  @IsNumber()
+  min_tickets_per_purchase: number;
+
   @ApiProperty({
     description: 'Precio de cada ticket',
     example: 10.5,

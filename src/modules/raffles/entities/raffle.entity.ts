@@ -34,6 +34,9 @@ export class Raffle {
   @Column({ name: 'total_tickets' })
   totalTickets: number;
 
+  @Column({ name: 'min_tickets_per_purchase', default: 1})
+  minTicketsPerPurchase: number;
+
   @Column({ name: 'image_url', nullable: true })
   imageUrl: string;
 
