@@ -117,6 +117,17 @@ export class CreatePurchaseDto {
     isArray: true,
   })
   @IsOptional()
+  @Transform(({ value }) => {
+    // In multipart/form-data, arrays may arrive as JSON strings
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
   @IsArray()
   @ArrayMinSize(1, { message: 'ticket_numbers must contain at least one number' })
   @IsInt({ each: true })

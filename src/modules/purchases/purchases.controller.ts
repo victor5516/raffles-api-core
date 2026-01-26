@@ -84,6 +84,17 @@ export class PurchasesController {
       }
     }
 
+    // Parse ticket_numbers if string (multipart)
+    // In multipart/form-data, arrays/objects may arrive as JSON strings
+    if (typeof createDto.ticket_numbers === 'string') {
+      try {
+        const parsed: unknown = JSON.parse(createDto.ticket_numbers);
+        createDto.ticket_numbers = parsed as CreatePurchaseDto['ticket_numbers'];
+      } catch {
+        // invalid json, validation pipe might catch it later or it stays string
+      }
+    }
+
     return this.purchasesService.create(createDto, file);
   }
 
