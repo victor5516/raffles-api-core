@@ -58,4 +58,21 @@ export class TicketsController {
     }
     return this.ticketsService.getTakenTickets(raffleUid);
   }
+
+  @Get('by-national-id')
+  @ApiOperation({ summary: 'Buscar tickets por cédula en rifas activas' })
+  @ApiQuery({
+    name: 'national_id',
+    description: 'Cédula o identificación nacional del cliente',
+    example: '1234567890',
+    required: true,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Rifas activas con tickets del cliente',
+  })
+  @ApiResponse({ status: 400, description: 'Parámetros inválidos' })
+  findByNationalId(@Query('national_id') nationalId: string) {
+    return this.ticketsService.findByNationalId(nationalId);
+  }
 }
