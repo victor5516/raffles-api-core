@@ -17,6 +17,7 @@ import { TicketsModule } from './modules/tickets/tickets.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { S3Module } from './common/s3/s3.module';
 import { SqsModule } from './common/sqs/sqs.module';
+import { MailModule } from './modules/mail/mail.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { SqsModule } from './common/sqs/sqs.module';
     }),
     S3Module,
     SqsModule,
+    MailModule,
     AuthModule,
     RafflesModule,
     PaymentMethodsModule,

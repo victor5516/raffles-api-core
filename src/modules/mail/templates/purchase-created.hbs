@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirmación de Recepción de Pago</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+    .container {
+      background-color: #ffffff;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .header {
+      text-align: center;
+      border-bottom: 3px solid #e74c3c;
+      padding-bottom: 20px;
+      margin-bottom: 30px;
+    }
+    .header h1 {
+      color: #e74c3c;
+      margin: 0;
+    }
+    .content {
+      margin: 20px 0;
+    }
+    .info-box {
+      background-color: #f8f9fa;
+      border-left: 4px solid #e74c3c;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    .ticket-numbers {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 4px;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    .ticket-numbers h3 {
+      margin-top: 0;
+      color: #856404;
+    }
+    .ticket-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .ticket-number {
+      background-color: #ffffff;
+      border: 2px solid #ffc107;
+      border-radius: 4px;
+      padding: 8px 12px;
+      font-weight: bold;
+      color: #856404;
+    }
+    .footer {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+    }
+    .highlight {
+      color: #e74c3c;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎟️ {{brandName}}</h1>
+    </div>
+    
+    <div class="content">
+      <p>Hola <strong>{{customer.fullName}}</strong>,</p>
+      
+      <p>Hemos recibido tu pago y estamos procesando tu compra. Te notificaremos una vez que sea verificada.</p>
+      
+      <div class="info-box">
+        <p><strong>Detalles de tu compra:</strong></p>
+        <ul>
+          <li><strong>Rifa:</strong> {{#if raffle}}{{raffle.title}}{{else}}N/A{{/if}}</li>
+          <li><strong>Cantidad de tickets:</strong> {{purchase.ticketQuantity}}</li>
+          <li><strong>Monto total:</strong> <span class="highlight">${{purchase.totalAmount}}</span></li>
+          <li><strong>Referencia bancaria:</strong> {{purchase.bankReference}}</li>
+          <li><strong>Fecha:</strong> {{purchase.submittedAt}}</li>
+        </ul>
+      </div>
+
+      {{#if purchase.ticketNumbers}}
+      {{#if purchase.ticketNumbers.length}}
+      <div class="ticket-numbers">
+        <h3>📋 Números Reservados</h3>
+        <p>Los siguientes números han sido reservados para ti mientras verificamos tu pago:</p>
+        <div class="ticket-list">
+          {{#each purchase.ticketNumbers}}
+          <span class="ticket-number">{{this}}</span>
+          {{/each}}
+        </div>
+        <p style="margin-top: 15px; font-size: 14px; color: #856404;">
+          <em>Nota: Estos números serán confirmados una vez que tu pago sea verificado.</em>
+        </p>
+      </div>
+      {{/if}}
+      {{/if}}
+
+      <p>Recibirás un correo de confirmación una vez que tu pago haya sido verificado.</p>
+      
+      <p>Si tienes alguna pregunta, no dudes en contactarnos respondiendo a este correo.</p>
+    </div>
+    
+    <div class="footer">
+      <p>© {{year}} {{brandName}}. Todos los derechos reservados.</p>
+      <p>Este es un correo automático, por favor no respondas directamente.</p>
+    </div>
+  </div>
+</body>
+</html>
