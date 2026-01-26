@@ -1,0 +1,58 @@
+services:
+  # --- TENANT 1: SIMON BOLI ---
+  api_simon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api_simon
+    restart: always
+    env_file: .env.simon
+    networks:
+      - app-net
+
+  # --- TENANT 2: SANTI EL BELICO ---
+  api_santi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api_santi
+    restart: always
+    env_file: .env.santi
+    networks:
+      - app-net
+
+  # --- ROUTER (NGINX) ---
+  nginx:
+    image: nginx:alpine
+    container_name: raffles_nginx
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # We pass the variables so that envsubst (nginx's templater) uses them
+      - DOMAIN_CLIENT_1=${DOMAIN_CLIENT_1}
+      - DOMAIN_CLIENT_2=${DOMAIN_CLIENT_2}
+    volumes:
+      # NOTE: We mount in /templates/, not in /conf.d/
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - api_simon
+      - api_santi
+    networks:
+      - app-net
+
+  # --- SSL MANAGER (CERTBOT) ---
+  certbot:
+    image: certbot/certbot
+    container_name: raffles_certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+networks:
+  app-net:
+    driver: bridge
