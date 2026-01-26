@@ -1,8 +1,8 @@
-import { Module, Logger } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
+import * as aws from '@aws-sdk/client-ses';
 import * as nodemailer from 'nodemailer';
 import { MailService } from './mail.service';
 
@@ -11,61 +11,23 @@ import { MailService } from './mail.service';
     MailerModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {
-        const logger = new Logger('MailModule');
         const region = configService.get<string>('AWS_REGION') || 'us-east-1';
 
-        logger.log(`Initializing SES client for region: ${region}`);
-
-        // Create SESv2 client - will use IAM role credentials automatically on EC2
-        // If credentials are not available via IAM role, AWS SDK will use:
-        // 1. Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-        // 2. Shared credentials file (~/.aws/credentials)
-        // 3. IAM role (on EC2)
-        const sesClient = new SESv2Client({
+        // 1. Cliente SES (AWS SDK v3)
+        const ses = new aws.SES({
           region,
-          // Let AWS SDK use default credential chain
         });
 
-        // Create nodemailer transport with SES
-        // Note: The SES object must have exactly 'sesClient' and 'SendEmailCommand' properties
-        // Property names must match exactly as nodemailer expects them
-        const sesConfig = {
-          SES: {
-            sesClient,
-            SendEmailCommand
-          },
-        };
-
-        // Create the transport - this must be a nodemailer transport instance
-        const transporter = nodemailer.createTransport(sesConfig as any);
-
-        // Verify the transport was created correctly (should be SES transport, not SMTP)
-        const transportName = transporter.transporter?.name || 'unknown';
-        logger.log(`Transport created. Type: ${transportName}`);
-
-        // Accept 'SES', 'ses', 'SESTransport', or 'ses-transport' as valid SES transport names
-        const isValidSESTransport =
-          transportName === 'SES' ||
-          transportName === 'ses' ||
-          transportName === 'SESTransport' ||
-          transportName === 'ses-transport' ||
-          transportName.toLowerCase().includes('ses');
-
-        if (!isValidSESTransport) {
-          const errorMsg = `CRITICAL: Expected SES transport but got ${transportName}. The transport may fall back to SMTP.`;
-          logger.error(errorMsg);
-          throw new Error(errorMsg);
-        }
-
-        logger.log('SES transport verified successfully');
+        // 2. Transportador con el truco para TypeScript
+        const transporter = nodemailer.createTransport({
+          SES: ses,
+        } as any); // <--- ¡AQUÍ ESTÁ LA CLAVE! (as any)
 
         const brandName =
           configService.get<string>('MAIL_BRAND_NAME') || 'Rifas';
         const mailFrom =
           configService.get<string>('MAIL_FROM') ||
           `"${brandName}" <no-reply@simonboli.com>`;
-
-        logger.log(`Mail configured with from: ${mailFrom}`);
 
         return {
           transport: transporter,

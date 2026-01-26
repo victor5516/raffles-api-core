@@ -13,7 +13,7 @@ export default registerAs(
       url: process.env.DATABASE_URL,
       entities: [__dirname + '/../**/*.entity{.ts,.js}'],
       synchronize: true, // Don't use true in production!
-      logging: true,
+      logging: false,
       ...(true
         ? {
             ssl: {
