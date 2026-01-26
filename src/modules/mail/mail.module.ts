@@ -43,7 +43,15 @@ import { MailService } from './mail.service';
         const transportName = transporter.transporter?.name || 'unknown';
         logger.log(`Transport created. Type: ${transportName}`);
 
-        if (transportName !== 'SES' && transportName !== 'ses') {
+        // Accept 'SES', 'ses', 'SESTransport', or 'ses-transport' as valid SES transport names
+        const isValidSESTransport =
+          transportName === 'SES' ||
+          transportName === 'ses' ||
+          transportName === 'SESTransport' ||
+          transportName === 'ses-transport' ||
+          transportName.toLowerCase().includes('ses');
+
+        if (!isValidSESTransport) {
           const errorMsg = `CRITICAL: Expected SES transport but got ${transportName}. The transport may fall back to SMTP.`;
           logger.error(errorMsg);
           throw new Error(errorMsg);
