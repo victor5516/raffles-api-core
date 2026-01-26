@@ -1,5 +1,19 @@
 #!/bin/bash
 
+# Detect Docker Compose command
+if docker compose version &>/dev/null; then
+    DOCKER_COMPOSE="docker compose"
+elif docker-compose version &>/dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+else
+    echo "Error: Docker Compose no está instalado."
+    echo "Instala Docker Compose con:"
+    echo "  sudo mkdir -p /usr/local/lib/docker/cli-plugins"
+    echo "  sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64 -o /usr/local/lib/docker/cli-plugins/docker-compose"
+    echo "  sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose"
+    exit 1
+fi
+
 # Load variables from .env
 if [ -f .env ]; then
   export $(cat .env | grep -v '#' | awk '/=/ {print $1}')
@@ -35,7 +49,7 @@ for domain in "${domains[@]}"; do
   mkdir -p "$path"
   if [ ! -e "$path/fullchain.pem" ]; then
     echo "Generating dummy for $domain..."
-    docker compose run --rm --entrypoint "\
+    $DOCKER_COMPOSE run --rm --entrypoint "\
       openssl req -x509 -nodes -newkey rsa:$rsa_key_size -days 1\
         -keyout '/etc/letsencrypt/live/$domain/privkey.pem' \
         -out '/etc/letsencrypt/live/$domain/fullchain.pem' \
@@ -44,7 +58,7 @@ for domain in "${domains[@]}"; do
 done
 
 echo "### Starting Nginx..."
-docker compose up --force-recreate -d nginx
+$DOCKER_COMPOSE up --force-recreate -d nginx
 echo "### Nginx started. Waiting..."
 sleep 5
 
@@ -53,7 +67,7 @@ for domain in "${domains[@]}"; do
   echo ">>> Processing domain: $domain"
 
   # Remove the dummy
-  docker compose run --rm --entrypoint "\
+  $DOCKER_COMPOSE run --rm --entrypoint "\
     rm -Rf /etc/letsencrypt/live/$domain && \
     rm -Rf /etc/letsencrypt/archive/$domain && \
     rm -Rf /etc/letsencrypt/renewal/$domain.conf" certbot
@@ -63,7 +77,7 @@ for domain in "${domains[@]}"; do
 
   if [ $staging != "0" ]; then staging_arg="--staging"; fi
 
-  docker compose run --rm --entrypoint "\
+  $DOCKER_COMPOSE run --rm --entrypoint "\
     certbot certonly --webroot -w /var/www/certbot \
       $staging_arg \
       --email $email \
@@ -75,4 +89,4 @@ for domain in "${domains[@]}"; do
 done
 
 echo "### Reloading Nginx to apply changes..."
-docker compose exec nginx nginx -s reload
+$DOCKER_COMPOSE exec nginx nginx -s reload
