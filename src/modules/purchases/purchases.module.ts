@@ -8,16 +8,16 @@ import { Customer } from '../customers/entities/customer.entity';
 import { Raffle } from '../raffles/entities/raffle.entity';
 import { PaymentMethod } from '../payments/entities/payment-method.entity';
 import { Currency } from '../currencies/entities/currency.entity';
-import { MailModule } from '../mail/mail.module';
-import { PurchasesMailListener } from './listeners/purchases-mail.listener';
+// import { MailModule } from '../mail/mail.module';
+// import { PurchasesMailListener } from './listeners/purchases-mail.listener';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Purchase, Ticket, Customer, Raffle, PaymentMethod, Currency]),
-    MailModule,
+    // MailModule, // Deshabilitado: SES no funciona
   ],
   controllers: [PurchasesController],
-  providers: [PurchasesService, PurchasesMailListener],
+  providers: [PurchasesService], // PurchasesMailListener removido: SES no funciona
   exports: [PurchasesService],
 })
 export class PurchasesModule {}

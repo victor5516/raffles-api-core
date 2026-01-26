@@ -17,7 +17,7 @@ import { TicketsModule } from './modules/tickets/tickets.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { S3Module } from './common/s3/s3.module';
 import { SqsModule } from './common/sqs/sqs.module';
-import { MailModule } from './modules/mail/mail.module';
+// import { MailModule } from './modules/mail/mail.module'; // Deshabilitado: SES no funciona
 
 @Module({
   imports: [
@@ -37,7 +37,7 @@ import { MailModule } from './modules/mail/mail.module';
     }),
     S3Module,
     SqsModule,
-    MailModule,
+    // MailModule, // Deshabilitado: SES no funciona
     AuthModule,
     RafflesModule,
     PaymentMethodsModule,
