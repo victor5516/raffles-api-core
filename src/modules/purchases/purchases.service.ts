@@ -289,15 +289,12 @@ export class PurchasesService {
         throw new ForbiddenException('Only Super Admin can revert a verified purchase');
       }
 
-      const wasVerified = purchase.status === PurchaseStatus.VERIFIED;
       purchase.status = status;
 
       if (status === PurchaseStatus.VERIFIED) {
         purchase.verifiedAt = new Date();
-        await this.assignTickets(manager, purchase);
-      } else {
-        await manager.save(Purchase, purchase);
       }
+      await manager.save(Purchase, purchase);
 
       this.eventEmitter.emit('purchase.status_changed', {
         type: 'status_changed',
