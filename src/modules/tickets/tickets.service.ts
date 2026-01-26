@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Purchase, PurchaseStatus } from '../purchases/entities/purchase.entity';
 
 @Injectable()
@@ -53,5 +53,25 @@ export class TicketsService {
     return allTickets.sort(
       (a, b) => Number(a.ticket_number) - Number(b.ticket_number),
     );
+  }
+
+  async getTakenTickets(raffleId: string): Promise<number[]> {
+    const purchases = await this.purchaseRepository.find({
+      where: {
+        raffleId,
+        status: In([
+          PurchaseStatus.PENDING,
+          PurchaseStatus.VERIFIED,
+          PurchaseStatus.MANUAL_REVIEW,
+        ]),
+      },
+      select: ['ticketNumbers'],
+    });
+
+    const allTicketNumbers = purchases
+      .flatMap((purchase) => purchase.ticketNumbers || [])
+      .filter((num) => num !== null && num !== undefined);
+
+    return Array.from(new Set(allTicketNumbers)).sort((a, b) => a - b);
   }
 }
