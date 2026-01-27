@@ -56,6 +56,7 @@ export class PaymentMethodsService {
       paymentData: createDto.payment_data as unknown,
       minimumPaymentAmount: createDto.minimum_payment_amount,
       currencyId: createDto.currency_id,
+      order: createDto.order ?? 0,
     };
 
     return this.create(entityLike);
@@ -80,6 +81,7 @@ export class PaymentMethodsService {
   async findAll() {
     const items = await this.paymentMethodRepository.find({
       relations: ['currency'],
+      order: { order: 'ASC' },
     });
     return await Promise.all(
       items.map(async (pm) => {
@@ -157,6 +159,7 @@ export class PaymentMethodsService {
 
     const updateEntityLike: Partial<PaymentMethod> = {};
     if (updateDto.name) updateEntityLike.name = updateDto.name;
+    if(updateDto.accountHolderName) updateEntityLike.accountHolderName = updateDto.accountHolderName;
     if (imageKey) updateEntityLike.imageUrl = imageKey;
     if (updateDto.payment_data)
       updateEntityLike.paymentData = updateDto.payment_data as unknown;
@@ -164,6 +167,7 @@ export class PaymentMethodsService {
       updateEntityLike.minimumPaymentAmount = updateDto.minimum_payment_amount;
     if (updateDto.currency_id) updateEntityLike.currencyId = updateDto.currency_id;
     if (updateDto.accountHolderName) updateEntityLike.accountHolderName = updateDto.accountHolderName;
+    if (updateDto.order !== undefined) updateEntityLike.order = updateDto.order;
     return this.update(uid, updateEntityLike);
   }
 

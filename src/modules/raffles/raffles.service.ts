@@ -62,6 +62,7 @@ export class RafflesService {
       digitsLength: createRaffleDto.digits_length,
       ticketPrice: createRaffleDto.ticket_price,
       totalTickets: createRaffleDto.total_tickets,
+      minTicketsPerPurchase: createRaffleDto.min_tickets_per_purchase,
       imageUrl: createRaffleDto.image_url,
       selectionType: createRaffleDto.selection_type,
     });
@@ -147,6 +148,8 @@ export class RafflesService {
       updateData.ticketPrice = updateRaffleDto.ticket_price;
     if (updateRaffleDto.total_tickets)
       updateData.totalTickets = updateRaffleDto.total_tickets;
+    if (updateRaffleDto.min_tickets_per_purchase !== undefined)
+      updateData.minTicketsPerPurchase = updateRaffleDto.min_tickets_per_purchase;
     if (updateRaffleDto.image_url)
       updateData.imageUrl = updateRaffleDto.image_url;
     if (updateRaffleDto.status) updateData.status = updateRaffleDto.status;

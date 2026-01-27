@@ -58,7 +58,7 @@ export class Raffle {
   @Column({
     type: 'enum',
     enum: RaffleSelectionType,
-    default: RaffleSelectionType.RANDOM,
+    default: RaffleSelectionType.SPECIFIC,
     name: 'selection_type',
   })
   selectionType: RaffleSelectionType;

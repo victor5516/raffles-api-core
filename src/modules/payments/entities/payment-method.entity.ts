@@ -25,9 +25,13 @@ export class PaymentMethod {
   @Column({ name: 'currency_id', type: 'uuid' })
   currencyId: string;
 
+  @Column({ name: 'order', type: 'int', default: 0 })
+  order: number;
+
   @ManyToOne(() => Currency, { eager: true })
   @JoinColumn({ name: 'currency_id' })
   currency: Currency;
+
   @Column({ name: 'external_id', nullable: true })
   externalId: string;
 

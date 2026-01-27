@@ -284,6 +284,11 @@ export class PurchasesService {
       const purchase = await manager.findOne(Purchase, { where: { uid } });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
+      // Business rule: VERIFIER can only verify, not reject
+      if (adminRole === AdminRole.VERIFIER && status === PurchaseStatus.REJECTED) {
+        throw new ForbiddenException('Verifiers cannot reject purchases. Only verification is allowed.');
+      }
+
       // Business rule: Only SUPER_ADMIN can revert a verified purchase
       if (purchase.status === PurchaseStatus.VERIFIED && adminRole !== AdminRole.SUPER_ADMIN) {
         throw new ForbiddenException('Only Super Admin can revert a verified purchase');

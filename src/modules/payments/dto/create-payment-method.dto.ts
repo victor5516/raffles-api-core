@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsUUID,
   IsOptional,
+  Min,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -49,6 +50,16 @@ export class CreatePaymentMethodDto {
   @Transform(({ value }) => parseFloat(String(value)))
   @IsNumber()
   minimum_payment_amount: number;
+
+  @ApiPropertyOptional({
+    description: 'Orden de visualización del método de pago',
+    example: 1,
+  })
+  @IsOptional()
+  @Transform(({ value }) => (value !== undefined ? parseInt(String(value), 10) : undefined))
+  @IsNumber()
+  @Min(0)
+  order?: number;
 
   @ApiProperty({
     description: 'UID de la divisa asociada',
