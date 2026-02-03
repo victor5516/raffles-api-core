@@ -6,10 +6,12 @@ import {
   IsDateString,
   IsEnum,
   Min,
+  IsObject,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RaffleStatus, RaffleSelectionType } from '../entities/raffle.entity';
+import { PromotionStrategy } from '../utils/pricing.util';
 
 export class CreateRaffleDto {
   @ApiProperty({
@@ -113,4 +115,32 @@ export class CreateRaffleDto {
     example: [],
   })
   gallery?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Estrategia de promoción: nxm (lleva N paga M) o percentage (descuento %)',
+    enum: PromotionStrategy,
+    example: PromotionStrategy.NXM,
+  })
+  @IsOptional()
+  @IsEnum(PromotionStrategy)
+  promotion_strategy?: PromotionStrategy;
+
+  @ApiPropertyOptional({
+    description:
+      'Configuración de la promoción. NxM: { buy: 5, pay: 4 } o { groups: [{ buy: 3, pay: 2 }, { buy: 5, pay: 4 }] }. Percentage: { percentage: 10 } (10% descuento). En multipart puede enviarse como JSON string.',
+    example: { buy: 5, pay: 4 },
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @IsObject()
+  promotion_config?: Record<string, unknown>;
 }

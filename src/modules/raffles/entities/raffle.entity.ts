@@ -69,6 +69,12 @@ export class Raffle {
   @Column({name: 'external_id', nullable: true})
   externalId: string;
 
+  @Column({ name: 'promotion_strategy', nullable: true })
+  promotionStrategy: string | null;
+
+  @Column({ type: 'jsonb', nullable: true, name: 'promotion_config' })
+  promotionConfig: object | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

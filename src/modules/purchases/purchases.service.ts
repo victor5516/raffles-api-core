@@ -29,6 +29,7 @@ import { SqsService } from '../../common/sqs/sqs.service';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
 import { AuditWebhookDto } from './dto/audit-webhook.dto';
 import { AdminRole } from '../auth/enums/admin-role.enum';
+import { calculatePromotionalTotal } from '../raffles/utils/pricing.util';
 
 @Injectable()
 export class PurchasesService {
@@ -63,13 +64,32 @@ export class PurchasesService {
     file: Express.Multer.File | undefined,
   ) {
     const createdPurchase = await this.dataSource.transaction(async (manager) => {
-      // 1. Fetch & Validate Raffle (Pessimistic Locking to prevent race conditions)
+      // 1. Recuperar Raffle (findOne con lock) para ticketPrice y config de promociones
       const raffle = await this.lockAndValidateRaffle(
         manager,
         createDto.raffleId,
       );
 
-      // 2. Validate Capacity & Reserve Tickets Strategy
+      // 2. Recuperar PaymentMethod para obtener currency.value (tasa de cambio)
+      const paymentMethod = await manager.findOne(PaymentMethod, {
+        where: { uid: createDto.paymentMethodId },
+        relations: ['currency'],
+      });
+      if (!paymentMethod) {
+        throw new NotFoundException('Payment method not found');
+      }
+      const unitPriceInPaymentCurrency =
+        Number(raffle.ticketPrice) *
+        Number(paymentMethod.currency?.value ?? 1);
+      const calculatedTotal = calculatePromotionalTotal(
+        unitPriceInPaymentCurrency,
+        createDto.ticket_quantity,
+        raffle.promotionStrategy ?? null,
+        raffle.promotionConfig ?? null,
+      );
+      const totalAmountToPersist = Number(calculatedTotal.toFixed(2));
+
+      // 3. Validate Capacity & Reserve Tickets Strategy
       // Returns specific numbers if selected, or null if random (to be assigned later)
       const ticketNumbers = await this.determineTicketAllocation(
         manager,
@@ -77,7 +97,7 @@ export class PurchasesService {
         createDto,
       );
 
-      // 3. Customer & File Handling
+      // 4. Customer & File Handling
       const customer = await this.getOrCreateCustomer(
         manager,
         createDto.customer,
@@ -87,12 +107,12 @@ export class PurchasesService {
         createDto.raffleId,
       );
 
-      // 4. Persistence
+      // 5. Persistence — Seguridad: no usar createDto.totalAmount; el backend es la única fuente de verdad del total.
       const purchase = manager.create(Purchase, {
         raffleId: createDto.raffleId,
         paymentMethodId: createDto.paymentMethodId,
         ticketQuantity: createDto.ticket_quantity,
-        totalAmount: createDto.totalAmount,
+        totalAmount: totalAmountToPersist,
         bankReference: createDto.bank_reference,
         paymentScreenshotUrl: screenshotKey,
         customerId: customer.uid,

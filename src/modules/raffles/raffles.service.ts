@@ -140,6 +140,8 @@ export class RafflesService {
       imageUrl: createRaffleDto.image_url,
       gallery: createRaffleDto.gallery ?? [],
       selectionType: createRaffleDto.selection_type,
+      promotionStrategy: createRaffleDto.promotion_strategy ?? null,
+      promotionConfig: createRaffleDto.promotion_config ?? null,
     });
     const savedRaffle = await this.raffleRepository.save(raffle);
     const currencies = await this.currenciesService.findAll();
@@ -230,6 +232,10 @@ export class RafflesService {
     if (updateRaffleDto.status) updateData.status = updateRaffleDto.status;
     if (updateRaffleDto.selection_type !== undefined)
       updateData.selectionType = updateRaffleDto.selection_type;
+    if (updateRaffleDto.promotion_strategy !== undefined)
+      updateData.promotionStrategy = updateRaffleDto.promotion_strategy;
+    if (updateRaffleDto.promotion_config !== undefined)
+      updateData.promotionConfig = updateRaffleDto.promotion_config;
 
     await this.raffleRepository.update(uid, updateData);
     return this.findOne(uid);
