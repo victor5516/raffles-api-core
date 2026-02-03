@@ -10,6 +10,7 @@ import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { UpdateRaffleDto } from './dto/update-raffle.dto';
 import { S3Service } from '../../common/s3/s3.service';
 import { CurrenciesService } from '../currencies/currencies.service';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class RafflesService {
@@ -17,12 +18,14 @@ export class RafflesService {
     @InjectRepository(Raffle)
     private raffleRepository: Repository<Raffle>,
     private readonly s3Service: S3Service,
+    private readonly configService: ConfigService,
     private readonly currenciesService: CurrenciesService,
   ) {}
 
   async createWithImage(
     createRaffleDto: CreateRaffleDto,
     file: Express.Multer.File | undefined,
+    galleryFiles: Express.Multer.File[] = [],
   ) {
     if (file) {
       const { key } = await this.s3Service.uploadBuffer({
@@ -33,6 +36,20 @@ export class RafflesService {
       });
       createRaffleDto = { ...createRaffleDto, image_url: key };
     }
+    if (galleryFiles.length > 0) {
+      const results = await Promise.all(
+        galleryFiles.map((f) =>
+          this.s3Service.uploadBuffer({
+            keyPrefix: `raffles`,
+            originalName: f.originalname,
+            buffer: f.buffer,
+            contentType: f.mimetype,
+          }),
+        ),
+      );
+      const galleryUrls = results.map((r) => r.key);
+      createRaffleDto = { ...createRaffleDto, gallery: galleryUrls };
+    }
     return this.create(createRaffleDto);
   }
 
@@ -41,6 +58,7 @@ export class RafflesService {
     updateRaffleDto: UpdateRaffleDto,
     file: Express.Multer.File | undefined,
     userId?: string,
+    galleryFiles: Express.Multer.File[] = [],
   ) {
     if (file) {
       if (!userId) throw new UnauthorizedException();
@@ -52,7 +70,63 @@ export class RafflesService {
       });
       updateRaffleDto = { ...updateRaffleDto, image_url: key };
     }
-    return this.update(uid, updateRaffleDto);
+
+    let galleryKeysToDelete: string[] = [];
+    if (updateRaffleDto.gallery_keys_to_delete) {
+      try {
+        const parsed = JSON.parse(updateRaffleDto.gallery_keys_to_delete);
+        galleryKeysToDelete = Array.isArray(parsed)
+          ? parsed.filter((k): k is string => typeof k === 'string')
+          : [];
+      } catch {
+        galleryKeysToDelete = [];
+      }
+    }
+
+    const hasGalleryChanges =
+      galleryKeysToDelete.length > 0 || galleryFiles.length > 0;
+    if (hasGalleryChanges) {
+      if (galleryKeysToDelete.length > 0) {
+        await Promise.all(
+          galleryKeysToDelete.map((key) =>
+            this.s3Service.deleteObject(key).catch(() => {}),
+          ),
+        );
+      }
+
+      const existing = await this.raffleRepository.findOne({
+        where: { uid },
+        select: ['gallery'],
+      });
+      const existingGallery = existing?.gallery ?? [];
+      const remaining = existingGallery.filter(
+        (k) => !galleryKeysToDelete.includes(k),
+      );
+
+      if (galleryFiles.length > 0) {
+        const results = await Promise.all(
+          galleryFiles.map((f) =>
+            this.s3Service.uploadBuffer({
+              keyPrefix: userId ? `raffles/${userId}` : 'raffles',
+              originalName: f.originalname,
+              buffer: f.buffer,
+              contentType: f.mimetype,
+            }),
+          ),
+        );
+        const newKeys = results.map((r) => r.key);
+        updateRaffleDto = {
+          ...updateRaffleDto,
+          gallery: [...remaining, ...newKeys],
+        };
+      } else {
+        updateRaffleDto = { ...updateRaffleDto, gallery: remaining };
+      }
+    }
+
+    const { gallery_keys_to_delete: _removed, ...dtoForUpdate } =
+      updateRaffleDto;
+    return this.update(uid, dtoForUpdate);
   }
 
   async create(createRaffleDto: CreateRaffleDto) {
@@ -64,6 +138,7 @@ export class RafflesService {
       totalTickets: createRaffleDto.total_tickets,
       minTicketsPerPurchase: createRaffleDto.min_tickets_per_purchase,
       imageUrl: createRaffleDto.image_url,
+      gallery: createRaffleDto.gallery ?? [],
       selectionType: createRaffleDto.selection_type,
     });
     const savedRaffle = await this.raffleRepository.save(raffle);
@@ -75,6 +150,7 @@ export class RafflesService {
   }
 
   async findAllEfficient() {
+    // 1. Obtener datos crudos
     const qb = this.raffleRepository
       .createQueryBuilder('raffle')
       .loadRelationCountAndMap('raffle.ticketsSold', 'raffle.tickets')
@@ -85,20 +161,9 @@ export class RafflesService {
       this.currenciesService.findAll(),
     ]);
 
-    return await Promise.all(
-      raffles.map(async (r) => {
-        const ticketsSold = (r as unknown as { ticketsSold: number })
-          .ticketsSold;
-        return {
-          ...r,
-          imageUrl:
-            (await this.s3Service.getPresignedGetUrl(r.imageUrl)) ?? r.imageUrl,
-          tickets_sold: ticketsSold,
-          percentage_sold:
-            r.totalTickets > 0 ? (ticketsSold / r.totalTickets) * 100 : 0,
-          prices: this.calculatePrices(r.ticketPrice, currencies),
-        };
-      }),
+    // 2. Procesar en paralelo usando una función helper
+    return Promise.all(
+      raffles.map((raffle) => this.transformRaffle(raffle, currencies))
     );
   }
 
@@ -124,11 +189,22 @@ export class RafflesService {
 
     const currencies = await this.currenciesService.findAll();
 
+    const galleryUrls =
+      raffle.gallery?.length > 0
+        ? await Promise.all(
+            raffle.gallery.map((key) =>
+              this.s3Service.getPresignedGetUrl(key),
+            ),
+          )
+        : [];
+
     return {
       ...raffle,
       imageUrl:
         (await this.s3Service.getPresignedGetUrl(raffle.imageUrl)) ??
         raffle.imageUrl,
+      gallery: galleryUrls.filter((url): url is string => url != null),
+      galleryKeys: raffle.gallery ?? [],
       prices: this.calculatePrices(raffle.ticketPrice, currencies),
     };
   }
@@ -152,6 +228,8 @@ export class RafflesService {
       updateData.minTicketsPerPurchase = updateRaffleDto.min_tickets_per_purchase;
     if (updateRaffleDto.image_url)
       updateData.imageUrl = updateRaffleDto.image_url;
+    if (updateRaffleDto.gallery !== undefined)
+      updateData.gallery = updateRaffleDto.gallery;
     if (updateRaffleDto.status) updateData.status = updateRaffleDto.status;
     if (updateRaffleDto.selection_type !== undefined)
       updateData.selectionType = updateRaffleDto.selection_type;
@@ -163,5 +241,22 @@ export class RafflesService {
   async remove(uid: string) {
     const result = await this.raffleRepository.delete(uid);
     if (result.affected === 0) throw new NotFoundException('Raffle not found');
+  }
+
+  private async transformRaffle(raffle: any, currencies: any[]) {
+    const ticketsSold = raffle.ticketsSold || 0;
+
+    const cdnUrl = this.configService.get<string>('CLOUDFRONT_URL');
+
+    return {
+      ...raffle,
+      imageUrl: raffle.imageUrl ? `${cdnUrl}/${raffle.imageUrl}` : null, // Fallback si falla S3
+      gallery: raffle.gallery?.map((key) => `${cdnUrl}/${key}`) ?? [],
+      tickets_sold: ticketsSold,
+      percentage_sold: raffle.totalTickets > 0
+        ? (ticketsSold / raffle.totalTickets) * 100
+        : 0,
+      prices: this.calculatePrices(raffle.ticketPrice, currencies),
+    };
   }
 }

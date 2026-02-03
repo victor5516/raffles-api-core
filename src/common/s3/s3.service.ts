@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   PutObjectCommand,
   S3Client,
@@ -50,6 +51,13 @@ export class S3Service {
     );
 
     return { key };
+  }
+
+  async deleteObject(key: string): Promise<void> {
+    if (!key || this.isHttpUrl(key)) return;
+    await this.client.send(
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
   }
 
   async getPresignedGetUrl(

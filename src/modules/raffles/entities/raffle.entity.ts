@@ -45,6 +45,9 @@ export class Raffle {
   @Column({ name: 'image_url', nullable: true })
   imageUrl: string;
 
+  @Column({ type: 'text', array: true, nullable: true, default: [] })
+  gallery: string[];
+
   @Column()
   deadline: Date;
 

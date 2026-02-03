@@ -8,6 +8,7 @@ import {
   Delete,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   Req,
 } from '@nestjs/common';
 import {
@@ -22,7 +23,7 @@ import {
 import { RafflesService } from './raffles.service';
 import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { UpdateRaffleDto } from './dto/update-raffle.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Request } from 'express';
 import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
@@ -39,9 +40,13 @@ export class RafflesController {
   @Post()
   @AdminAuth()
   @UseInterceptors(
-    FileInterceptor('image', {
-      storage: memoryStorage(),
-    }),
+    FileFieldsInterceptor(
+      [
+        { name: 'image', maxCount: 1 },
+        { name: 'gallery', maxCount: 5 },
+      ],
+      { storage: memoryStorage() },
+    ),
   )
   @ApiOperation({ summary: 'Crear una nueva rifa' })
   @ApiBearerAuth('JWT-auth')
@@ -56,9 +61,16 @@ export class RafflesController {
   @ApiResponse({ status: 401, description: 'No autorizado' })
   async create(
     @Body() createRaffleDto: CreateRaffleDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles()
+    files: { image?: Express.Multer.File[]; gallery?: Express.Multer.File[] },
   ) {
-    return this.rafflesService.createWithImage(createRaffleDto, file);
+    const imageFile = files?.image?.[0];
+    const galleryFiles = files?.gallery ?? [];
+    return this.rafflesService.createWithImage(
+      createRaffleDto,
+      imageFile,
+      galleryFiles,
+    );
   }
 
   @Get()
@@ -91,9 +103,13 @@ export class RafflesController {
   @Put(':uid')
   @AdminAuth()
   @UseInterceptors(
-    FileInterceptor('image', {
-      storage: memoryStorage(),
-    }),
+    FileFieldsInterceptor(
+      [
+        { name: 'image', maxCount: 1 },
+        { name: 'gallery', maxCount: 5 },
+      ],
+      { storage: memoryStorage() },
+    ),
   )
   @ApiOperation({ summary: 'Actualizar una rifa existente' })
   @ApiBearerAuth('JWT-auth')
@@ -116,14 +132,18 @@ export class RafflesController {
   async update(
     @Param('uid') uid: string,
     @Body() updateRaffleDto: UpdateRaffleDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles()
+    files: { image?: Express.Multer.File[]; gallery?: Express.Multer.File[] },
     @Req() req: AuthenticatedRequest,
   ) {
+    const imageFile = files?.image?.[0];
+    const galleryFiles = files?.gallery ?? [];
     return this.rafflesService.updateWithImage(
       uid,
       updateRaffleDto,
-      file,
+      imageFile,
       req.user?.uid,
+      galleryFiles,
     );
   }
 

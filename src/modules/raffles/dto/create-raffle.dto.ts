@@ -105,4 +105,12 @@ export class CreateRaffleDto {
     example: 'https://example.com/image.jpg',
   })
   image_url?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'URLs de la galería (se rellenan por el backend al subir archivos en el campo gallery del multipart)',
+    type: [String],
+    example: [],
+  })
+  gallery?: string[];
 }
