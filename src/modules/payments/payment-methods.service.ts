@@ -83,17 +83,15 @@ export class PaymentMethodsService {
       relations: ['currency'],
       order: { order: 'ASC' },
     });
-    return await Promise.all(
-      items.map(async (pm) => {
-        const { currency, ...rest } = pm;
-        return {
-          ...rest,
-          currency: currency?.symbol || null,
-          imageUrl:
-            (await this.s3Service.getPresignedGetUrl(pm.imageUrl)) ?? pm.imageUrl,
-        };
-      }),
-    );
+    return items.map((pm) => {
+      const { currency, ...rest } = pm;
+      return {
+        ...rest,
+        currency: currency?.symbol || null,
+        imageUrl:
+          this.s3Service.getCdnUrl(pm.imageUrl) ?? pm.imageUrl,
+      };
+    });
   }
 
   async findOne(uid: string) {
@@ -107,7 +105,7 @@ export class PaymentMethodsService {
       ...rest,
       currency: currency?.symbol || null,
       imageUrl:
-        (await this.s3Service.getPresignedGetUrl(paymentMethod.imageUrl)) ??
+        this.s3Service.getCdnUrl(paymentMethod.imageUrl) ??
         paymentMethod.imageUrl,
     };
   }

@@ -428,38 +428,39 @@ export class PurchasesService {
 
     const [items, total] = await qb.getManyAndCount();
 
-    const signedItems = await Promise.all(
-      items.map(async (purchase) => {
-        const [paymentScreenshotUrl, raffleImageUrl, paymentMethodImageUrl] =
-          await Promise.all([
-            this.s3Service.getPresignedGetUrl(purchase.paymentScreenshotUrl),
-            this.s3Service.getPresignedGetUrl(purchase.raffle?.imageUrl),
-            this.s3Service.getPresignedGetUrl(purchase.paymentMethod?.imageUrl),
-          ]);
+    const signedItems = items.map((purchase) => {
+      const paymentScreenshotUrl = this.s3Service.getCdnUrl(
+        purchase.paymentScreenshotUrl,
+      );
+      const raffleImageUrl = this.s3Service.getCdnUrl(
+        purchase.raffle?.imageUrl,
+      );
+      const paymentMethodImageUrl = this.s3Service.getCdnUrl(
+        purchase.paymentMethod?.imageUrl,
+      );
 
-        const { currency, ...paymentMethodRest } =
-          purchase.paymentMethod || {};
-        return {
-          ...purchase,
-          paymentScreenshotUrl:
-            paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
-          raffle: purchase.raffle
-            ? {
-                ...purchase.raffle,
-                imageUrl: raffleImageUrl ?? purchase.raffle.imageUrl,
-              }
-            : purchase.raffle,
-          paymentMethod: purchase.paymentMethod
-            ? {
-                ...paymentMethodRest,
-                currency: currency?.symbol || null,
-                imageUrl:
-                  paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
-              }
-            : purchase.paymentMethod,
-        };
-      }),
-    );
+      const { currency, ...paymentMethodRest } =
+        purchase.paymentMethod || {};
+      return {
+        ...purchase,
+        paymentScreenshotUrl:
+          paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
+        raffle: purchase.raffle
+          ? {
+              ...purchase.raffle,
+              imageUrl: raffleImageUrl ?? purchase.raffle.imageUrl,
+            }
+          : purchase.raffle,
+        paymentMethod: purchase.paymentMethod
+          ? {
+              ...paymentMethodRest,
+              currency: currency?.symbol || null,
+              imageUrl:
+                paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
+            }
+          : purchase.paymentMethod,
+      };
+    });
 
     return {
       items: signedItems,
@@ -482,12 +483,15 @@ export class PurchasesService {
     });
     if (!purchase) throw new NotFoundException('Purchase not found');
 
-    const [paymentScreenshotUrl, raffleImageUrl, paymentMethodImageUrl] =
-      await Promise.all([
-        this.s3Service.getPresignedGetUrl(purchase.paymentScreenshotUrl),
-        this.s3Service.getPresignedGetUrl(purchase.raffle?.imageUrl),
-        this.s3Service.getPresignedGetUrl(purchase.paymentMethod?.imageUrl),
-      ]);
+    const paymentScreenshotUrl = this.s3Service.getCdnUrl(
+      purchase.paymentScreenshotUrl,
+    );
+    const raffleImageUrl = this.s3Service.getCdnUrl(
+      purchase.raffle?.imageUrl,
+    );
+    const paymentMethodImageUrl = this.s3Service.getCdnUrl(
+      purchase.paymentMethod?.imageUrl,
+    );
 
     const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
     return {

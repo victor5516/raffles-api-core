@@ -163,23 +163,21 @@ export class TicketsService {
       tickets: raffleData.tickets.sort((a, b) => a.ticketNumber - b.ticketNumber),
     }));
 
-    // Generate presigned URLs for all raffle images
-    const rafflesWithPresignedUrls = await Promise.all(
-      rafflesArray.map(async (raffleData) => {
-        const presignedImageUrl =
-          (await this.s3Service.getPresignedGetUrl(raffleData.raffle.imageUrl)) ??
-          raffleData.raffle.imageUrl;
+    // Generate CDN URLs for all raffle images
+    const rafflesWithCdnUrls = rafflesArray.map((raffleData) => {
+      const imageUrl =
+        this.s3Service.getCdnUrl(raffleData.raffle.imageUrl) ??
+        raffleData.raffle.imageUrl;
 
-        return {
-          ...raffleData,
-          raffle: {
-            ...raffleData.raffle,
-            imageUrl: presignedImageUrl,
-          },
-        };
-      }),
-    );
+      return {
+        ...raffleData,
+        raffle: {
+          ...raffleData.raffle,
+          imageUrl,
+        },
+      };
+    });
 
-    return { raffles: rafflesWithPresignedUrls };
+    return { raffles: rafflesWithCdnUrls };
   }
 }

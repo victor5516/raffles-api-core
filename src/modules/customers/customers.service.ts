@@ -149,18 +149,12 @@ export class CustomersService {
       ticketsByPurchase.get(ticket.purchaseId)!.push(ticket);
     }
 
-    // Get presigned URLs for all unique raffle images
+    // Get CDN URLs for all unique raffle images
     const uniqueRaffles = Array.from(rafflesMap.values()).map(({ raffle }) => raffle);
-    const raffleImageUrls = await Promise.all(
-      uniqueRaffles.map((raffle) =>
-        this.s3Service.getPresignedGetUrl(raffle.imageUrl).then(
-          (presignedUrl) => ({
-            raffleId: raffle.uid,
-            imageUrl: presignedUrl ?? raffle.imageUrl,
-          }),
-        ),
-      ),
-    );
+    const raffleImageUrls = uniqueRaffles.map((raffle) => ({
+      raffleId: raffle.uid,
+      imageUrl: this.s3Service.getCdnUrl(raffle.imageUrl) ?? raffle.imageUrl,
+    }));
     const imageUrlMap = new Map(
       raffleImageUrls.map((item) => [item.raffleId, item.imageUrl]),
     );

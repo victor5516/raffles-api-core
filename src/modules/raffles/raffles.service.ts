@@ -191,19 +191,16 @@ export class RafflesService {
 
     const galleryUrls =
       raffle.gallery?.length > 0
-        ? await Promise.all(
-            raffle.gallery.map((key) =>
-              this.s3Service.getPresignedGetUrl(key),
-            ),
-          )
+        ? raffle.gallery
+            .map((key) => this.s3Service.getCdnUrl(key))
+            .filter((url): url is string => url != null)
         : [];
 
     return {
       ...raffle,
       imageUrl:
-        (await this.s3Service.getPresignedGetUrl(raffle.imageUrl)) ??
-        raffle.imageUrl,
-      gallery: galleryUrls.filter((url): url is string => url != null),
+        this.s3Service.getCdnUrl(raffle.imageUrl) ?? raffle.imageUrl,
+      gallery: galleryUrls,
       galleryKeys: raffle.gallery ?? [],
       prices: this.calculatePrices(raffle.ticketPrice, currencies),
     };

@@ -75,6 +75,14 @@ export class S3Service {
     return await getSignedUrl(this.client, cmd, { expiresIn: expiresSeconds });
   }
 
+  getCdnUrl(key: string | undefined | null): string | undefined | null {
+    if (!key) return key;
+    if (this.isHttpUrl(key)) return key;
+    const cdnUrl = this.configService.get<string>('CLOUDFRONT_URL');
+    if (!cdnUrl) return key;
+    return `${cdnUrl.replace(/\/$/, '')}/${key.replace(/^\//, '')}`;
+  }
+
   private normalizePrefix(prefix: string) {
     if (!prefix) return '';
     return prefix.endsWith('/') ? prefix : `${prefix}/`;
