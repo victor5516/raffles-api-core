@@ -6,10 +6,20 @@ export enum PromotionStrategy {
   PERCENTAGE = 'percentage',
 }
 
-/** NxM config: single rule or multiple rules (best price wins). */
+export interface NxmRule {
+  buy: number;
+  pay: number;
+}
+
+export interface NxmConfig {
+  rules: NxmRule[];
+}
+
+/** NxM config: single rule, groups array, or rules array (tiered). */
 export type NxmPromotionConfig =
   | { buy: number; pay: number }
-  | { groups: Array<{ buy: number; pay: number }> };
+  | { groups: NxmRule[] }
+  | NxmConfig;
 
 /** Percentage config: discount 0-100. */
 export type PercentagePromotionConfig = { percentage: number };
@@ -22,15 +32,32 @@ function roundMoney(value: number): number {
   return Math.round(value * Math.pow(10, ROUND_DECIMALS)) / Math.pow(10, ROUND_DECIMALS);
 }
 
-function getNxmRules(config: Record<string, unknown>): Array<{ buy: number; pay: number }> {
+function isValidRule(g: { buy?: number; pay?: number }): boolean {
+  return (
+    typeof g?.buy === 'number' &&
+    typeof g?.pay === 'number' &&
+    Number.isFinite(g.buy) &&
+    Number.isFinite(g.pay) &&
+    g.buy >= 1 &&
+    g.pay >= 0 &&
+    g.pay <= g.buy
+  );
+}
+
+function getNxmRules(config: Record<string, unknown>): NxmRule[] {
+  if (config.rules && Array.isArray(config.rules)) {
+    return (config.rules as Array<{ buy?: number; pay?: number }>)
+      .filter(isValidRule)
+      .map((g) => ({ buy: g.buy!, pay: g.pay! }));
+  }
   if (config.groups && Array.isArray(config.groups)) {
     return (config.groups as Array<{ buy?: number; pay?: number }>)
-      .filter((g) => typeof g?.buy === 'number' && typeof g?.pay === 'number' && g.buy >= 1 && g.pay <= g.buy)
+      .filter(isValidRule)
       .map((g) => ({ buy: g.buy!, pay: g.pay! }));
   }
   const buy = Number(config.buy);
   const pay = Number(config.pay);
-  if (Number.isFinite(buy) && Number.isFinite(pay) && buy >= 1 && pay <= buy) {
+  if (Number.isFinite(buy) && Number.isFinite(pay) && buy >= 1 && pay >= 0 && pay <= buy) {
     return [{ buy, pay }];
   }
   return [];
@@ -67,17 +94,16 @@ export function calculatePromotionalTotal(
     if (rules.length === 0) {
       return roundMoney(basePrice * quantity);
     }
-    let minTotal = basePrice * quantity;
-    for (const { buy, pay } of rules) {
-      const groups = Math.floor(quantity / buy);
-      const remainder = quantity % buy;
-      const ticketsToPay = groups * pay + remainder;
-      const total = ticketsToPay * basePrice;
-      if (total < minTotal) {
-        minTotal = total;
-      }
+    const sorted = [...rules].sort((a, b) => b.buy - a.buy);
+    let remaining = quantity;
+    let ticketsToPay = 0;
+    for (const { buy, pay } of sorted) {
+      const packages = Math.floor(remaining / buy);
+      ticketsToPay += packages * pay;
+      remaining -= packages * buy;
     }
-    return roundMoney(minTotal);
+    ticketsToPay += remaining;
+    return roundMoney(ticketsToPay * basePrice);
   }
 
   if (strategy === PromotionStrategy.PERCENTAGE) {
