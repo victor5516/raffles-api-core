@@ -71,6 +71,7 @@ export class Purchase {
     type: 'numeric',
     precision: 10,
     scale: 2,
+    nullable: true,
   })
   totalAmount: number;
 
