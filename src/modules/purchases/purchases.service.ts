@@ -233,14 +233,22 @@ export class PurchasesService {
       }
 
       // B. Duplicate Check (Fuzzy Reference Matching)
-      const cleanAiRef = String(aiData.reference).replace(/\D/g, '');
+      const normalizedAiRef = this.normalizeReference(aiData.reference);
+      // Si por alguna razón la referencia normalizada queda vacía, enviamos a revisión manual
+      if (!normalizedAiRef) {
+        return this.handleManualReview(
+          manager,
+          purchase,
+          'Purchase requires manual review (empty normalized reference)',
+        );
+      }
       const existingWithRef = await manager
         .getRepository(Purchase)
         .createQueryBuilder('p')
         .where('p.uid != :uid', { uid: purchaseId })
         .andWhere(
-          "REGEXP_REPLACE(p.bank_reference, '\\D', '', 'g') LIKE :ref",
-          { ref: `%${cleanAiRef}%` },
+          "REGEXP_REPLACE(UPPER(p.bank_reference), '[^A-Z0-9]', '', 'g') = :ref",
+          { ref: normalizedAiRef },
         )
         .getOne();
 
@@ -264,9 +272,11 @@ export class PurchasesService {
       const isCurrencyValid = expectedCurrency?.symbol === aiData.currency;
 
       // E. Reference Check (Bidirectional endsWith)
-      const cleanUserRef = purchase.bankReference.replace(/\D/g, '');
+      const normalizedUserRef = this.normalizeReference(purchase.bankReference);
       const isRefValid =
-        cleanAiRef.endsWith(cleanUserRef) || cleanUserRef.endsWith(cleanAiRef);
+        !!normalizedUserRef &&
+        (normalizedAiRef.endsWith(normalizedUserRef) ||
+          normalizedUserRef.endsWith(normalizedAiRef));
 
       // --- Decision Phase ---
 
@@ -350,6 +360,8 @@ export class PurchasesService {
     const status = typeof query.status === 'string' ? query.status : undefined;
     const nationalId =
       typeof query.nationalId === 'string' ? query.nationalId : undefined;
+    const bankReference =
+      typeof query.bankReference === 'string' ? query.bankReference : undefined;
     const currency =
       typeof query.currency === 'string' ? query.currency : undefined;
     const paymentMethodId =
@@ -404,6 +416,11 @@ export class PurchasesService {
     if (nationalId) {
       qb.andWhere('customer.nationalId LIKE :nationalId', {
         nationalId: `%${nationalId}%`,
+      });
+    }
+    if (bankReference) {
+      qb.andWhere('purchase.bankReference ILIKE :bankReference', {
+        bankReference: `%${bankReference}%`,
       });
     }
     if (currency) {
@@ -547,6 +564,7 @@ export class PurchasesService {
       currency,
       status,
       nationalId,
+      bankReference,
       paymentMethodId,
       ticketNumber,
       customerName,
@@ -581,6 +599,11 @@ export class PurchasesService {
       qb.andWhere('customer.nationalId LIKE :nationalId', {
         nationalId: `%${nationalId}%`,
       });
+    if (bankReference) {
+      qb.andWhere('purchase.bankReference ILIKE :bankReference', {
+        bankReference: `%${bankReference}%`,
+      });
+    }
     if (currency)
       qb.andWhere('pmCurrency.symbol = :currency', { currency });
     if (paymentMethodId)
@@ -885,6 +908,18 @@ export class PurchasesService {
   // ===========================================================================
   // OTHER HELPERS (Customer, S3, Notifications, AssignTickets)
   // ===========================================================================
+
+  /**
+   * Normaliza referencias alfanuméricas para comparaciones seguras.
+   * - Convierte a mayúsculas
+   * - Elimina todo lo que no sea letra ni dígito (espacios, guiones, etc.)
+   */
+  private normalizeReference(raw: string | null | undefined): string | null {
+    if (!raw) return null;
+    const upper = String(raw).toUpperCase();
+    const cleaned = upper.replace(/[^A-Z0-9]/g, '');
+    return cleaned || null;
+  }
 
   private async getOrCreateCustomer(
     manager: EntityManager,

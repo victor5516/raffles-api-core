@@ -36,6 +36,14 @@ export class ExportPurchasesDto {
   nationalId?: string;
 
   @ApiPropertyOptional({
+    description: 'Filtrar por referencia bancaria',
+    example: '123456',
+  })
+  @IsOptional()
+  @IsString()
+  bankReference?: string;
+
+  @ApiPropertyOptional({
     description: 'Filtrar por UID del método de pago',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })

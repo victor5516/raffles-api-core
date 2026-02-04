@@ -127,6 +127,12 @@ export class PurchasesController {
     type: String,
   })
   @ApiQuery({
+    name: 'bankReference',
+    required: false,
+    description: 'Filtrar por referencia bancaria',
+    type: String,
+  })
+  @ApiQuery({
     name: 'paymentMethodId',
     required: false,
     description: 'Filtrar por UID del método de pago',
