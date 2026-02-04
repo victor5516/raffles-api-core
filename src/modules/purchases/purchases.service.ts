@@ -310,7 +310,7 @@ export class PurchasesService {
 
       // --- Decision Phase ---
 
-      if (isAmountValid && isCurrencyValid && isRefValid) {
+      if (isAmountValid && isRefValid) {
         purchase.status = PurchaseStatus.VERIFIED;
         purchase.verifiedAt = new Date();
       } else {
@@ -318,13 +318,12 @@ export class PurchasesService {
         this.logger.warn(
           `AI Validation Failed for purchase ${purchaseId}: ` +
           `Amount=${isAmountValid} (${purchase.totalAmount} vs ${aiData.amount}), ` +
-          `Currency=${isCurrencyValid} (${expectedCurrency?.symbol} vs ${aiData.currency}), ` +
           `Ref=${isRefValid} (User: "${normalizedUserRef}", AI: "${normalizedAiRef}")`
         );
         return this.handleManualReview(
           manager,
           purchase,
-          `AI Validation Failed: Amount=${isAmountValid}, Currency=${isCurrencyValid}, Ref=${isRefValid}`,
+          `AI Validation Failed: Amount=${isAmountValid}, Ref=${isRefValid}`,
         );
       }
 
