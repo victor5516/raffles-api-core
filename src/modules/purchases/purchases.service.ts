@@ -925,8 +925,14 @@ export class PurchasesService {
     manager: EntityManager,
     data: any,
   ): Promise<Customer> {
+    const rawNationalId = data.national_id || data.nationalId;
+    const normalizedNationalId =
+      typeof rawNationalId === 'string'
+        ? rawNationalId.replace(/\D/g, '') || null
+        : null;
+
     const existingCustomer = await manager.findOne(Customer, {
-      where: { nationalId: data.national_id || data.nationalId },
+      where: { nationalId: normalizedNationalId },
     });
 
     if (existingCustomer) {
@@ -937,7 +943,7 @@ export class PurchasesService {
     }
 
     const newCustomer = manager.create(Customer, {
-      nationalId: data.national_id || data.nationalId,
+      nationalId: normalizedNationalId,
       fullName: data.full_name || data.fullName,
       email: data.email,
       phone: data.phone,
