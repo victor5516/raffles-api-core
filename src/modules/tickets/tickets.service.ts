@@ -112,12 +112,12 @@ export class TicketsService {
       return { raffles: [] };
     }
 
-    // Group purchases by raffle
+    // Group purchases by raffle; each raffle has an array of purchases with their ticket numbers
     const raffleMap = new Map<string, {
       raffle: any;
-      purchases: number;
-      tickets: Array<{
-        ticketNumber: number;
+      purchases: Array<{
+        purchaseUid: string;
+        ticketNumbers: number[];
         status: PurchaseStatus;
         purchaseDate: Date;
       }>;
@@ -137,31 +137,23 @@ export class TicketsService {
             imageUrl: purchase.raffle.imageUrl,
             status: purchase.raffle.status,
           },
-          purchases: 0,
-          tickets: [],
+          purchases: [],
         });
       }
 
       const raffleData = raffleMap.get(raffleId)!;
-      raffleData.purchases += 1;
-
-      // Add all tickets from this purchase
-      if (purchase.ticketNumbers && purchase.ticketNumbers.length > 0) {
-        purchase.ticketNumbers.forEach((ticketNumber) => {
-          raffleData.tickets.push({
-            ticketNumber,
-            status: purchase.status,
-            purchaseDate: purchase.verifiedAt || purchase.submittedAt,
-          });
-        });
-      }
+      const ticketNumbers = purchase.ticketNumbers?.length
+        ? [...purchase.ticketNumbers].sort((a, b) => a - b)
+        : [];
+      raffleData.purchases.push({
+        purchaseUid: purchase.uid,
+        ticketNumbers,
+        status: purchase.status,
+        purchaseDate: purchase.verifiedAt || purchase.submittedAt,
+      });
     });
 
-    // Convert map to array and sort tickets by number
-    const rafflesArray = Array.from(raffleMap.values()).map((raffleData) => ({
-      ...raffleData,
-      tickets: raffleData.tickets.sort((a, b) => a.ticketNumber - b.ticketNumber),
-    }));
+    const rafflesArray = Array.from(raffleMap.values());
 
     // Generate CDN URLs for all raffle images
     const rafflesWithCdnUrls = rafflesArray.map((raffleData) => {

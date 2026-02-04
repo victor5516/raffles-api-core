@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Raffle } from './entities/raffle.entity';
+import { Purchase, PurchaseStatus } from '../purchases/entities/purchase.entity';
 import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { UpdateRaffleDto } from './dto/update-raffle.dto';
 import { S3Service } from '../../common/s3/s3.service';
@@ -17,6 +18,8 @@ export class RafflesService {
   constructor(
     @InjectRepository(Raffle)
     private raffleRepository: Repository<Raffle>,
+    @InjectRepository(Purchase)
+    private purchaseRepository: Repository<Purchase>,
     private readonly s3Service: S3Service,
     private readonly configService: ConfigService,
     private readonly currenciesService: CurrenciesService,
@@ -152,16 +155,38 @@ export class RafflesService {
   }
 
   async findAllEfficient() {
-    // 1. Obtener datos crudos
+    // 1. Obtener datos crudos (raffles, monedas, y suma de tickets por raffle)
     const qb = this.raffleRepository
       .createQueryBuilder('raffle')
-      .loadRelationCountAndMap('raffle.ticketsSold', 'raffle.tickets')
       .orderBy('raffle.created_at', 'DESC');
 
-    const [raffles, currencies] = await Promise.all([
+    const soldByRaffleQb = this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('purchase.raffleId', 'raffleId')
+      .addSelect('COALESCE(SUM(purchase.ticketQuantity), 0)', 'ticketsSold')
+      .where('purchase.status NOT IN (:rejected, :duplicated)', {
+        rejected: PurchaseStatus.REJECTED,
+        duplicated: PurchaseStatus.DUPLICATED,
+      })
+      .groupBy('purchase.raffleId');
+
+    const [raffles, currencies, soldByRaffleRaw] = await Promise.all([
       qb.getMany(),
       this.currenciesService.findAll(),
+      soldByRaffleQb.getRawMany<{
+        raffleId: string;
+        ticketsSold: string | number;
+      }>(),
     ]);
+
+    const soldByRaffle = new Map<string, number>(
+      soldByRaffleRaw.map((r) => [r.raffleId, Number(r.ticketsSold ?? 0)])
+    );
+
+    for (const raffle of raffles) {
+      (raffle as Raffle & { ticketsSold: number }).ticketsSold =
+        soldByRaffle.get(raffle.uid) ?? 0;
+    }
 
     // 2. Procesar en paralelo usando una función helper
     return Promise.all(
