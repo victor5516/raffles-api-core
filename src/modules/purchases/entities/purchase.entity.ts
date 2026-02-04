@@ -66,7 +66,12 @@ export class Purchase {
   })
   status: PurchaseStatus;
 
-  @Column({ name: 'total_amount' })
+  @Column({
+    name: 'total_amount',
+    type: 'numeric',
+    precision: 10,
+    scale: 2,
+  })
   totalAmount: number;
 
   @Column({ type: 'jsonb', nullable: true, name: 'ai_analysis_result' })
