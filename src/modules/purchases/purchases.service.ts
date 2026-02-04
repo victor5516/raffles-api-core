@@ -271,12 +271,42 @@ export class PurchasesService {
       const expectedCurrency = purchase.paymentMethod?.currency;
       const isCurrencyValid = expectedCurrency?.symbol === aiData.currency;
 
-      // E. Reference Check (Bidirectional endsWith)
+      // E. Reference Check (Improved: endsWith OR contains for better matching)
       const normalizedUserRef = this.normalizeReference(purchase.bankReference);
-      const isRefValid =
-        !!normalizedUserRef &&
-        (normalizedAiRef.endsWith(normalizedUserRef) ||
-          normalizedUserRef.endsWith(normalizedAiRef));
+
+      // Log para depuración
+      this.logger.debug(
+        `Reference validation for purchase ${purchaseId}: ` +
+        `UserRef="${purchase.bankReference}" -> Normalized="${normalizedUserRef}", ` +
+        `AiRef="${aiData.reference}" -> Normalized="${normalizedAiRef}", ` +
+        `Amount: ${purchase.totalAmount} vs ${aiData.amount} (diff=${amountDiff.toFixed(4)}), ` +
+        `Currency: ${expectedCurrency?.symbol} vs ${aiData.currency}`
+      );
+
+      let isRefValid = false;
+      if (normalizedUserRef && normalizedAiRef) {
+        // Verificar si una termina con la otra (caso original)
+        const endsWithMatch =
+          normalizedAiRef.endsWith(normalizedUserRef) ||
+          normalizedUserRef.endsWith(normalizedAiRef);
+
+        // Verificar si una contiene a la otra (para casos como 413134749064265728 contiene 265728)
+        const containsMatch =
+          normalizedAiRef.includes(normalizedUserRef) ||
+          normalizedUserRef.includes(normalizedAiRef);
+
+        // Aceptar si hay coincidencia por endsWith O si la referencia más corta tiene al menos 4 caracteres y está contenida
+        const minLengthForContains = 4;
+        const shorterRef = normalizedUserRef.length <= normalizedAiRef.length
+          ? normalizedUserRef
+          : normalizedAiRef;
+        const longerRef = normalizedUserRef.length > normalizedAiRef.length
+          ? normalizedUserRef
+          : normalizedAiRef;
+
+        isRefValid = endsWithMatch ||
+          (containsMatch && shorterRef.length >= minLengthForContains && longerRef.includes(shorterRef));
+      }
 
       // --- Decision Phase ---
 
@@ -284,6 +314,13 @@ export class PurchasesService {
         purchase.status = PurchaseStatus.VERIFIED;
         purchase.verifiedAt = new Date();
       } else {
+        // Log detallado del motivo de falla
+        this.logger.warn(
+          `AI Validation Failed for purchase ${purchaseId}: ` +
+          `Amount=${isAmountValid} (${purchase.totalAmount} vs ${aiData.amount}), ` +
+          `Currency=${isCurrencyValid} (${expectedCurrency?.symbol} vs ${aiData.currency}), ` +
+          `Ref=${isRefValid} (User: "${normalizedUserRef}", AI: "${normalizedAiRef}")`
+        );
         return this.handleManualReview(
           manager,
           purchase,
