@@ -327,10 +327,12 @@ export class PurchasesService {
         );
       }
 
-      // If transition to VERIFIED -> Assign Tickets (if Random)
+      // If transition to VERIFIED -> Persist aiAnalysisResult, status, verifiedAt; then assign tickets if needed
       if (purchase.status === PurchaseStatus.VERIFIED && !wasVerified) {
-        await this.assignTickets(manager, purchase);
-        return this.serializePurchase(purchase);
+        const saved = await manager.save(Purchase, purchase);
+        this.emitStatusChange(saved, 'verified', 'AI validation passed');
+        await this.assignTickets(manager, saved);
+        return this.serializePurchase(saved);
       }
 
       const updatedPurchase = await manager.save(Purchase, purchase);
