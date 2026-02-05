@@ -174,6 +174,12 @@ export class PurchasesController {
     description: 'Filtrar por fecha hasta (formato ISO date)',
     type: String,
   })
+  @ApiQuery({
+    name: 'verificationSource',
+    required: false,
+    description: 'Filtrar por fuente de verificación (ai/admin)',
+    type: String,
+  })
   @ApiResponse({
     status: 200,
     description: 'Lista de compras obtenida exitosamente',

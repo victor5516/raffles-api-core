@@ -553,6 +553,8 @@ export class PurchasesService {
       typeof query.dateFrom === 'string' ? query.dateFrom : undefined;
     const dateTo =
       typeof query.dateTo === 'string' ? query.dateTo : undefined;
+    const verificationSource =
+      typeof query.verificationSource === 'string' ? query.verificationSource : undefined;
 
     const pageRaw = query.page;
     const limitRaw = query.limit;
@@ -596,6 +598,9 @@ export class PurchasesService {
     }
     if (currency) {
       qb.andWhere('currency.symbol = :currency', { currency });
+    }
+    if (verificationSource) {
+      qb.andWhere('purchase.verificationSource = :verificationSource', { verificationSource });
     }
     if (paymentMethodId) {
       qb.andWhere('purchase.paymentMethodId = :paymentMethodId', {
