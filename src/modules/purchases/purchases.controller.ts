@@ -45,6 +45,7 @@ import { AiWebhookDto } from './dto/ai-webhook.dto';
 import { AuditWebhookDto } from './dto/audit-webhook.dto';
 import { ConfigService } from '@nestjs/config';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
+import { RaffleOrdersSummaryResponseDto } from './dto/purchases-summary.dto';
 
 @ApiTags('Purchases')
 @Controller('purchases')
@@ -343,6 +344,33 @@ export class PurchasesController {
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
   remove(@Param('uid') uid: string) {
     return this.purchasesService.remove(uid);
+  }
+
+  @Get('summary/by-raffle')
+  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @ApiOperation({
+    summary: 'Obtener resumen de órdenes por rifa y currency',
+    description:
+      'Devuelve el conteo de órdenes pending + manual_review por currency y los totales globales por rifa.',
+  })
+  @ApiBearerAuth('JWT-auth')
+  @ApiQuery({
+    name: 'raffleId',
+    required: true,
+    description: 'UID de la rifa para la que se desea el resumen',
+    type: String,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Resumen de órdenes obtenido exitosamente',
+    type: RaffleOrdersSummaryResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  getRaffleOrdersSummary(
+    @Query('raffleId') raffleId: string,
+  ): Promise<RaffleOrdersSummaryResponseDto> {
+    return this.purchasesService.getRaffleOrdersSummary(raffleId);
   }
 
   @Post('webhooks/ai-result')

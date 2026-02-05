@@ -10,7 +10,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository, ILike } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as ExcelJS from 'exceljs';
-import { Purchase, PurchaseStatus, VerificationSource } from './entities/purchase.entity';
+import {
+  Purchase,
+  PurchaseStatus,
+  VerificationSource,
+} from './entities/purchase.entity';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
 import { Customer } from 'src/modules/customers/entities/customer.entity';
 import {
@@ -30,6 +34,11 @@ import { AiWebhookDto } from './dto/ai-webhook.dto';
 import { AuditWebhookDto } from './dto/audit-webhook.dto';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 import { calculatePromotionalTotal } from '../raffles/utils/pricing.util';
+import {
+  RaffleOrdersSummaryCurrencyDto,
+  RaffleOrdersSummaryResponseDto,
+  RaffleOrdersSummaryTotalsDto,
+} from './dto/purchases-summary.dto';
 
 @Injectable()
 export class PurchasesService {
@@ -522,6 +531,126 @@ export class PurchasesService {
     });
 
     return this.findOne(uid);
+  }
+
+  async getRaffleOrdersSummary(
+    raffleId: string,
+  ): Promise<RaffleOrdersSummaryResponseDto> {
+    if (!raffleId) {
+      throw new BadRequestException('raffleId is required');
+    }
+
+    // 1. Obtener todas las currencies configuradas (para incluir las que no tengan órdenes)
+    const currencies = await this.currencyRepository.find();
+
+    if (!currencies.length) {
+      return {
+        raffleId,
+        currencies: [],
+        totals: {
+          allCount: 0,
+          pendingAndManualCount: 0,
+          rejectedCount: 0,
+        },
+      };
+    }
+
+    // 2. Consulta agregada de órdenes por currency y estado
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .leftJoin('purchase.paymentMethod', 'paymentMethod')
+      .leftJoin('paymentMethod.currency', 'currency')
+      .select('currency.uid', 'currencyUid')
+      .addSelect('currency.name', 'currencyName')
+      .addSelect('currency.symbol', 'currencySymbol')
+      .addSelect('purchase.status', 'status')
+      .addSelect('COUNT(purchase.uid)', 'count')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .groupBy('currency.uid')
+      .addGroupBy('currency.name')
+      .addGroupBy('currency.symbol')
+      .addGroupBy('purchase.status')
+      .getRawMany<{
+        currencyUid: string | null;
+        currencyName: string | null;
+        currencySymbol: string | null;
+        status: PurchaseStatus;
+        count: string;
+      }>();
+
+    // 3. Acumular por currencyUid y totales globales
+    const perCurrencyMap = new Map<
+      string,
+      {
+        pendingAndManualCount: number;
+      }
+    >();
+
+    let allCount = 0;
+    let pendingAndManualCountTotal = 0;
+    let rejectedCount = 0;
+
+    for (const row of raw) {
+      const currencyUid = row.currencyUid;
+      const status = row.status;
+      const count = Number(row.count) || 0;
+
+      // Totales globales por estado
+      allCount += count;
+
+      if (
+        status === PurchaseStatus.PENDING ||
+        status === PurchaseStatus.MANUAL_REVIEW
+      ) {
+        pendingAndManualCountTotal += count;
+      }
+
+      if (status === PurchaseStatus.REJECTED) {
+        rejectedCount += count;
+      }
+
+      // Si la orden no tiene currency asociada, la contamos en totales globales
+      // pero no en el breakdown por currency
+      if (!currencyUid) continue;
+
+      const current = perCurrencyMap.get(currencyUid) ?? {
+        pendingAndManualCount: 0,
+      };
+
+      if (
+        status === PurchaseStatus.PENDING ||
+        status === PurchaseStatus.MANUAL_REVIEW
+      ) {
+        current.pendingAndManualCount += count;
+      }
+
+      perCurrencyMap.set(currencyUid, current);
+    }
+
+    // 4. Construir DTO de currencies garantizando incluir todas, incluso las que no tienen órdenes
+    const currenciesDto: RaffleOrdersSummaryCurrencyDto[] = currencies.map(
+      (currency) => {
+        const stats = perCurrencyMap.get(currency.uid);
+        return {
+          currencyUid: currency.uid,
+          name: currency.name,
+          symbol: currency.symbol,
+          pendingAndManualCount: stats?.pendingAndManualCount ?? 0,
+        };
+      },
+    );
+
+    const totals: RaffleOrdersSummaryTotalsDto = {
+      allCount,
+      pendingAndManualCount: pendingAndManualCountTotal,
+      rejectedCount,
+    };
+
+    return {
+      raffleId,
+      currencies: currenciesDto,
+      totals,
+    };
   }
 
   async findAll(query: Record<string, unknown>) {
