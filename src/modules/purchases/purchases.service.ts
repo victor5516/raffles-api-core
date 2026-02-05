@@ -379,15 +379,129 @@ export class PurchasesService {
     });
   }
 
-  async update(uid: string, updateDto: UpdatePurchaseDto) {
-    const purchase = await this.purchaseRepository.findOne({ where: { uid } });
-    if (!purchase) throw new NotFoundException('Purchase not found');
+  /**
+   * Full update of a purchase (Super Admin only).
+   * All fields are optional; only provided fields are updated.
+   * Runs in a transaction. Validates raffle, payment method, customer, and ticket numbers when provided.
+   */
+  async update(
+    uid: string,
+    updateDto: UpdatePurchaseDto,
+    file?: Express.Multer.File,
+  ) {
+    await this.dataSource.transaction(async (manager) => {
+      const purchase = await manager.findOne(Purchase, {
+        where: { uid },
+        relations: ['raffle', 'paymentMethod', 'customer'],
+      });
+      if (!purchase) throw new NotFoundException('Purchase not found');
 
-    if (updateDto.notes !== undefined) {
-      purchase.notes = updateDto.notes;
-    }
+      if (updateDto.raffleId !== undefined) {
+        const raffle = await manager.findOne(Raffle, {
+          where: { uid: updateDto.raffleId },
+        });
+        if (!raffle) throw new NotFoundException('Raffle not found');
+        if (raffle.status !== RaffleStatus.ACTIVE) {
+          throw new BadRequestException('Raffle is not active');
+        }
+        purchase.raffleId = updateDto.raffleId;
+      }
 
-    return await this.purchaseRepository.save(purchase);
+      if (updateDto.paymentMethodId !== undefined) {
+        const paymentMethod = await manager.findOne(PaymentMethod, {
+          where: { uid: updateDto.paymentMethodId },
+        });
+        if (!paymentMethod) {
+          throw new NotFoundException('Payment method not found');
+        }
+        purchase.paymentMethodId = updateDto.paymentMethodId;
+      }
+
+      if (updateDto.customer !== undefined) {
+        const customer = await this.getOrCreateCustomer(manager, updateDto.customer);
+        purchase.customerId = customer.uid;
+      } else if (updateDto.customerId !== undefined) {
+        const customer = await manager.findOne(Customer, {
+          where: { uid: updateDto.customerId },
+        });
+        if (!customer) throw new NotFoundException('Customer not found');
+        purchase.customerId = updateDto.customerId;
+      }
+
+      const raffle = purchase.raffle ?? (await manager.findOne(Raffle, { where: { uid: purchase.raffleId } }));
+
+      if (updateDto.ticket_numbers !== undefined) {
+        const numbers = updateDto.ticket_numbers;
+        if (numbers.length === 0) {
+          throw new BadRequestException('ticket_numbers must contain at least one number');
+        }
+        if (updateDto.ticket_quantity !== undefined && numbers.length !== updateDto.ticket_quantity) {
+          throw new BadRequestException(
+            `ticket_quantity (${updateDto.ticket_quantity}) must match ticket_numbers length (${numbers.length})`,
+          );
+        }
+        if (!raffle) throw new NotFoundException('Raffle not found');
+        const uniqueNumbers = new Set(numbers);
+        if (uniqueNumbers.size !== numbers.length) {
+          throw new BadRequestException('ticket_numbers contains duplicates');
+        }
+        const invalid = numbers.filter((n) => n < 0 || n >= raffle.totalTickets);
+        if (invalid.length > 0) {
+          throw new BadRequestException(
+            `Invalid ticket numbers (out of range): ${invalid.join(', ')}`,
+          );
+        }
+        const occupiedCount = await this.countOccupiedTickets(
+          manager,
+          raffle.uid,
+          numbers,
+          purchase.uid,
+        );
+        if (occupiedCount > 0) {
+          throw new ConflictException(
+            'Some selected tickets are already reserved or verified by another purchase.',
+          );
+        }
+        purchase.ticketNumbers = numbers;
+        purchase.ticketQuantity = numbers.length;
+      } else if (updateDto.ticket_quantity !== undefined) {
+        const existingCount = purchase.ticketNumbers?.length ?? 0;
+        if (existingCount > 0 && updateDto.ticket_quantity !== existingCount) {
+          throw new BadRequestException(
+            `ticket_quantity must match the number of assigned tickets (${existingCount})`,
+          );
+        }
+        purchase.ticketQuantity = updateDto.ticket_quantity;
+      }
+
+      if (file) {
+        const key = await this.uploadPaymentScreenshot(file, purchase.raffleId);
+        if (key) purchase.paymentScreenshotUrl = key;
+      } else if (updateDto.payment_screenshot_url !== undefined) {
+        purchase.paymentScreenshotUrl = updateDto.payment_screenshot_url;
+      }
+
+      if (updateDto.notes !== undefined) purchase.notes = updateDto.notes;
+      if (updateDto.bank_reference !== undefined) purchase.bankReference = updateDto.bank_reference;
+      if (updateDto.status !== undefined) {
+        purchase.status = updateDto.status;
+        if (updateDto.status === PurchaseStatus.VERIFIED && !purchase.verifiedAt) {
+          purchase.verifiedAt = new Date();
+        }
+      }
+      if (updateDto.totalAmount !== undefined) purchase.totalAmount = updateDto.totalAmount;
+
+      const ticketNumbersLength = purchase.ticketNumbers?.length;
+      if (ticketNumbersLength != null && purchase.ticketQuantity !== ticketNumbersLength) {
+        throw new BadRequestException(
+          `ticket_quantity (${purchase.ticketQuantity}) must equal the number of assigned tickets (${ticketNumbersLength})`,
+        );
+      }
+
+      await manager.save(Purchase, purchase);
+    });
+
+    return this.findOne(uid);
   }
 
   async findAll(query: Record<string, unknown>) {
@@ -919,24 +1033,30 @@ export class PurchasesService {
   /**
    * Helper to count how many of the requested numbers are already taken.
    * Checks PENDING and VERIFIED statuses.
+   * @param excludePurchaseId - When provided (e.g. on update), excludes this purchase from the count.
    */
   private async countOccupiedTickets(
     manager: EntityManager,
     raffleId: string,
     numbersToCheck: number[],
+    excludePurchaseId?: string,
   ): Promise<number> {
+    const params: (string | number | string[] | number[])[] = [
+      raffleId,
+      PurchaseStatus.PENDING,
+      PurchaseStatus.VERIFIED,
+      numbersToCheck,
+    ];
+    const excludeClause = excludePurchaseId ? ' AND purchase.uid != $5' : '';
+    if (excludePurchaseId) params.push(excludePurchaseId);
+
     const result = await manager.query(
       `SELECT COUNT(*) as count
        FROM purchase, unnest(ticket_numbers) as t_num
-       WHERE raffle_id = $1
-       AND status IN ($2, $3)
-       AND t_num = ANY($4)`,
-      [
-        raffleId,
-        PurchaseStatus.PENDING,
-        PurchaseStatus.VERIFIED,
-        numbersToCheck,
-      ],
+       WHERE purchase.raffle_id = $1
+       AND purchase.status IN ($2, $3)
+       AND t_num = ANY($4)${excludeClause}`,
+      params,
     );
     return parseInt(result[0]?.count || '0', 10);
   }

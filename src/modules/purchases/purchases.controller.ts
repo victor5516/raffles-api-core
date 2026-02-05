@@ -239,8 +239,17 @@ export class PurchasesController {
   }
 
   @Patch(':uid')
-  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
-  @ApiOperation({ summary: 'Actualizar una compra (notas)' })
+  @UseInterceptors(
+    FileInterceptor('payment_screenshot_url', {
+      storage: memoryStorage(),
+    }),
+  )
+  @Auth(AdminRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Actualizar una compra (todos los campos)',
+    description:
+      'Solo Super Admin. Permite editar todos los campos de la compra, incluido comprobante y números asignados. Acepta application/json o multipart/form-data para reemplazar el comprobante.',
+  })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
     name: 'uid',
@@ -254,13 +263,32 @@ export class PurchasesController {
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede editar la compra completa',
+  })
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
-  update(
+  async update(
     @Param('uid') uid: string,
     @Body() updateDto: UpdatePurchaseDto,
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.purchasesService.update(uid, updateDto);
+    const dto = updateDto as { customer?: unknown; ticket_numbers?: unknown };
+    if (typeof dto.customer === 'string') {
+      try {
+        dto.customer = JSON.parse(dto.customer) as unknown;
+      } catch {
+        // leave as-is
+      }
+    }
+    if (typeof dto.ticket_numbers === 'string') {
+      try {
+        dto.ticket_numbers = JSON.parse(dto.ticket_numbers) as number[];
+      } catch {
+        // leave as-is
+      }
+    }
+    return this.purchasesService.update(uid, updateDto, file);
   }
 
   @Patch(':uid/status')
