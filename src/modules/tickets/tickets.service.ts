@@ -172,4 +172,113 @@ export class TicketsService {
 
     return { raffles: rafflesWithCdnUrls };
   }
+
+  async findByTicketNumber(ticketNumber: number) {
+    if (ticketNumber == null || Number.isNaN(ticketNumber)) {
+      return { raffles: [] };
+    }
+
+    const purchases = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .innerJoin('purchase.raffle', 'raffle')
+      .where('raffle.status = :status', { status: RaffleStatus.ACTIVE })
+      .andWhere(':ticketNumber = ANY(purchase.ticket_numbers)', {
+        ticketNumber,
+      })
+      .select([
+        'purchase.uid',
+        'purchase.ticketNumbers',
+        'purchase.status',
+        'purchase.submittedAt',
+        'purchase.verifiedAt',
+        'raffle.uid',
+        'raffle.title',
+        'raffle.description',
+        'raffle.ticketPrice',
+        'raffle.totalTickets',
+        'raffle.imageUrl',
+        'raffle.status',
+      ])
+      .getMany();
+
+    if (purchases.length === 0) {
+      return { raffles: [] };
+    }
+
+    const raffleMap = new Map<string, {
+      raffle: any;
+      purchases: Array<{
+        purchaseUid: string;
+        ticketNumbers: number[];
+        status: PurchaseStatus;
+        purchaseDate: Date;
+      }>;
+    }>();
+
+    purchases.forEach((purchase) => {
+      const raffleId = purchase.raffle.uid;
+
+      if (!raffleMap.has(raffleId)) {
+        raffleMap.set(raffleId, {
+          raffle: {
+            uid: purchase.raffle.uid,
+            title: purchase.raffle.title,
+            description: purchase.raffle.description,
+            ticketPrice: purchase.raffle.ticketPrice,
+            totalTickets: purchase.raffle.totalTickets,
+            imageUrl: purchase.raffle.imageUrl,
+            status: purchase.raffle.status,
+          },
+          purchases: [],
+        });
+      }
+
+      const raffleData = raffleMap.get(raffleId)!;
+      const ticketNumbers = purchase.ticketNumbers?.length
+        ? [...purchase.ticketNumbers].sort((a, b) => a - b)
+        : [];
+      raffleData.purchases.push({
+        purchaseUid: purchase.uid,
+        ticketNumbers,
+        status: purchase.status,
+        purchaseDate: purchase.verifiedAt || purchase.submittedAt,
+      });
+    });
+
+    const rafflesArray = Array.from(raffleMap.values());
+
+    const rafflesWithCdnUrls = rafflesArray.map((raffleData) => {
+      const imageUrl =
+        this.s3Service.getCdnUrl(raffleData.raffle.imageUrl) ??
+        raffleData.raffle.imageUrl;
+
+      return {
+        ...raffleData,
+        raffle: {
+          ...raffleData.raffle,
+          imageUrl,
+        },
+      };
+    });
+
+    return { raffles: rafflesWithCdnUrls };
+  }
+
+  async searchUnified(q: string) {
+    const trimmed = q?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('q is required');
+    }
+
+    const byNationalId = await this.findByNationalId(trimmed);
+    if (byNationalId.raffles.length > 0) {
+      return byNationalId;
+    }
+
+    if (/^\d+$/.test(trimmed)) {
+      return this.findByTicketNumber(Number(trimmed));
+    }
+
+    return { raffles: [] };
+  }
 }

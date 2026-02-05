@@ -75,4 +75,21 @@ export class TicketsController {
   findByNationalId(@Query('national_id') nationalId: string) {
     return this.ticketsService.findByNationalId(nationalId);
   }
+
+  @Get('my-tickets')
+  @ApiOperation({ summary: 'Buscar mis boletos por cédula o número de boleto' })
+  @ApiQuery({
+    name: 'q',
+    description: 'Cédula o número de boleto',
+    example: '1234567890',
+    required: true,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Rifas activas con tickets del cliente o del boleto',
+  })
+  @ApiResponse({ status: 400, description: 'Parámetros inválidos' })
+  getMyTickets(@Query('q') q: string) {
+    return this.ticketsService.searchUnified(q);
+  }
 }
