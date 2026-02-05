@@ -3,8 +3,10 @@ import {
   Column,
   PrimaryGeneratedColumn,
   CreateDateColumn,
+  OneToMany,
 } from 'typeorm';
 import { AdminRole } from '../enums/admin-role.enum';
+import { Purchase } from '../../purchases/entities/purchase.entity';
 
 @Entity('admin')
 export class Admin {
@@ -29,4 +31,7 @@ export class Admin {
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  @OneToMany(() => Purchase, (purchase) => purchase.verifiedByAdmin)
+  purchasesVerified: Purchase[];
 }

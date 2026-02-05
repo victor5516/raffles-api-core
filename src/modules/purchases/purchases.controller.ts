@@ -272,6 +272,7 @@ export class PurchasesController {
     @Param('uid') uid: string,
     @Body() updateDto: UpdatePurchaseDto,
     @UploadedFile() file?: Express.Multer.File,
+    @ActiveUser() user?: Admin,
   ) {
     const dto = updateDto as { customer?: unknown; ticket_numbers?: unknown };
     if (typeof dto.customer === 'string') {
@@ -288,7 +289,7 @@ export class PurchasesController {
         // leave as-is
       }
     }
-    return this.purchasesService.update(uid, updateDto, file);
+    return this.purchasesService.update(uid, updateDto, file, user?.uid);
   }
 
   @Patch(':uid/status')
@@ -314,7 +315,7 @@ export class PurchasesController {
     @Body() updateDto: UpdatePurchaseStatusDto,
     @ActiveUser() user: Admin,
   ) {
-    return this.purchasesService.updateStatus(uid, updateDto, user.role);
+    return this.purchasesService.updateStatus(uid, updateDto, user.role, user.uid);
   }
 
   @Delete(':uid')

@@ -12,12 +12,18 @@ import { Raffle } from '../../raffles/entities/raffle.entity';
 import { Customer } from '../../customers/entities/customer.entity';
 import { PaymentMethod } from '../../payments/entities/payment-method.entity';
 import { Ticket } from '../../tickets/entities/ticket.entity';
+import { Admin } from '../../auth/entities/admin.entity';
 export enum PurchaseStatus {
   PENDING = 'pending',
   VERIFIED = 'verified',
   REJECTED = 'rejected',
   MANUAL_REVIEW = 'manual_review',
   DUPLICATED = 'duplicated',
+}
+
+export enum VerificationSource {
+  AI = 'ai',
+  ADMIN = 'admin',
 }
 
 @Entity('purchase')
@@ -83,6 +89,18 @@ export class Purchase {
 
   @Column({ name: 'verified_at', nullable: true })
   verifiedAt: Date;
+
+  @Column({
+    type: 'enum',
+    enum: VerificationSource,
+    nullable: true,
+    name: 'verification_source',
+  })
+  verificationSource?: VerificationSource;
+
+  @ManyToOne(() => Admin, { nullable: true })
+  @JoinColumn({ name: 'verified_by_admin_id' })
+  verifiedByAdmin?: Admin;
 
   @Column('integer', { array: true, nullable: true, name: 'ticket_numbers' })
   ticketNumbers: number[];

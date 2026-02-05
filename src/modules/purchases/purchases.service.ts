@@ -10,7 +10,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository, ILike } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as ExcelJS from 'exceljs';
-import { Purchase, PurchaseStatus } from './entities/purchase.entity';
+import { Purchase, PurchaseStatus, VerificationSource } from './entities/purchase.entity';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
 import { Customer } from 'src/modules/customers/entities/customer.entity';
 import {
@@ -313,6 +313,8 @@ export class PurchasesService {
       if (isAmountValid && isRefValid) {
         purchase.status = PurchaseStatus.VERIFIED;
         purchase.verifiedAt = new Date();
+        purchase.verificationSource = VerificationSource.AI;
+        purchase.verifiedByAdmin = null;
       } else {
         // Log detallado del motivo de falla
         this.logger.warn(
@@ -345,7 +347,12 @@ export class PurchasesService {
    * Triggers ticket assignment if status changes to VERIFIED.
    * Only SUPER_ADMIN can revert a purchase that is already VERIFIED.
    */
-  async updateStatus(uid: string, updateDto: UpdatePurchaseStatusDto, adminRole: AdminRole) {
+  async updateStatus(
+    uid: string,
+    updateDto: UpdatePurchaseStatusDto,
+    adminRole: AdminRole,
+    adminId: string,
+  ) {
     const { status } = updateDto;
 
     return this.dataSource.transaction(async (manager) => {
@@ -366,6 +373,10 @@ export class PurchasesService {
 
       if (status === PurchaseStatus.VERIFIED) {
         purchase.verifiedAt = new Date();
+        purchase.verificationSource = VerificationSource.ADMIN;
+        if (adminId) {
+          purchase.verifiedByAdmin = { uid: adminId } as any;
+        }
       }
       await manager.save(Purchase, purchase);
 
@@ -390,6 +401,7 @@ export class PurchasesService {
     uid: string,
     updateDto: UpdatePurchaseDto,
     file?: Express.Multer.File,
+    adminId?: string,
   ) {
     await this.dataSource.transaction(async (manager) => {
       const purchase = await manager.findOne(Purchase, {
@@ -487,8 +499,14 @@ export class PurchasesService {
       if (updateDto.bank_reference !== undefined) purchase.bankReference = updateDto.bank_reference;
       if (updateDto.status !== undefined) {
         purchase.status = updateDto.status;
-        if (updateDto.status === PurchaseStatus.VERIFIED && !purchase.verifiedAt) {
-          purchase.verifiedAt = new Date();
+        if (updateDto.status === PurchaseStatus.VERIFIED) {
+          if (!purchase.verifiedAt) {
+            purchase.verifiedAt = new Date();
+          }
+          purchase.verificationSource = VerificationSource.ADMIN;
+          if (adminId) {
+            purchase.verifiedByAdmin = { uid: adminId } as any;
+          }
         }
       }
       if (updateDto.totalAmount !== undefined) purchase.totalAmount = updateDto.totalAmount;
@@ -555,6 +573,7 @@ export class PurchasesService {
       .leftJoinAndSelect('purchase.raffle', 'raffle')
       .leftJoinAndSelect('purchase.paymentMethod', 'paymentMethod')
       .leftJoinAndSelect('paymentMethod.currency', 'currency')
+      .leftJoinAndSelect('purchase.verifiedByAdmin', 'verifiedByAdmin')
       .orderBy('purchase.submittedAt', 'DESC')
       .skip(skip)
       .take(limit);
@@ -648,6 +667,12 @@ export class PurchasesService {
                 paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
             }
           : purchase.paymentMethod,
+        verifiedByAdmin: purchase.verifiedByAdmin
+          ? {
+              uid: purchase.verifiedByAdmin.uid,
+              fullName: purchase.verifiedByAdmin.fullName,
+            }
+          : null,
       };
     });
 
