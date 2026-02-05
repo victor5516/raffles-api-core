@@ -739,6 +739,10 @@ export class PurchasesService {
     // 2. Query purchases
     const qb = this.purchaseRepository
       .createQueryBuilder('purchase')
+      // Siempre excluir compras rechazadas del export, sin importar los filtros
+      .andWhere('purchase.status != :rejectedStatus', {
+        rejectedStatus: PurchaseStatus.REJECTED,
+      })
       .leftJoinAndSelect('purchase.customer', 'customer')
       .leftJoinAndSelect('purchase.raffle', 'raffle')
       .leftJoinAndSelect('purchase.paymentMethod', 'paymentMethod')
@@ -830,6 +834,7 @@ export class PurchasesService {
         { header: 'Monto', key: 'amount', width: 15 },
         { header: 'Referencia', key: 'reference', width: 20 },
         { header: 'Estado', key: 'status', width: 15 },
+        { header: 'Vendedor', key: 'seller', width: 20 },
         { header: 'Rifa', key: 'raffle', width: 25 },
       ];
       worksheet.getRow(1).font = { bold: true };
@@ -864,6 +869,7 @@ export class PurchasesService {
           amount: Number(p.totalAmount).toFixed(2),
           reference: p.bankReference || '-',
           status: statusLabels[p.status] || p.status,
+          seller: p.paymentMethod?.accountHolderName || '-',
           raffle: p.raffle?.title || '-',
         });
       });
@@ -1069,12 +1075,15 @@ export class PurchasesService {
 
   /**
    * Normaliza referencias alfanuméricas para comparaciones seguras.
+   * - NFKC: convierte fullwidth (ej. OCR) y variantes Unicode a ASCII
    * - Convierte a mayúsculas
    * - Elimina todo lo que no sea letra ni dígito (espacios, guiones, etc.)
    */
   private normalizeReference(raw: string | null | undefined): string | null {
     if (!raw) return null;
-    const upper = String(raw).toUpperCase();
+    const str = String(raw);
+    const normalized = str.normalize('NFKC');
+    const upper = normalized.toUpperCase();
     const cleaned = upper.replace(/[^A-Z0-9]/g, '');
     return cleaned || null;
   }
