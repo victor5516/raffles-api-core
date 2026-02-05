@@ -228,6 +228,17 @@ export class CustomersService {
       throw new NotFoundException('Customer not found');
     }
 
+    // Check nationalId uniqueness if nationalId is being updated
+    if (updateDto.nationalId && updateDto.nationalId !== customer.nationalId) {
+      const existingCustomer = await this.customerRepository.findOne({
+        where: { nationalId: updateDto.nationalId },
+      });
+
+      if (existingCustomer && existingCustomer.uid !== uid) {
+        throw new ConflictException('La cédula ya está en uso');
+      }
+    }
+
     // Check email uniqueness if email is being updated
     if (updateDto.email && updateDto.email !== customer.email) {
       const existingCustomer = await this.customerRepository.findOne({
@@ -240,6 +251,9 @@ export class CustomersService {
     }
 
     // Update fields
+    if (updateDto.nationalId !== undefined) {
+      customer.nationalId = updateDto.nationalId;
+    }
     if (updateDto.fullName !== undefined) {
       customer.fullName = updateDto.fullName;
     }

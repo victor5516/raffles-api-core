@@ -3,6 +3,14 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateCustomerDto {
   @ApiPropertyOptional({
+    description: 'Número de cédula del cliente',
+    example: '1234567890',
+  })
+  @IsOptional()
+  @IsString()
+  nationalId?: string;
+
+  @ApiPropertyOptional({
     description: 'Nombre completo del cliente',
     example: 'Juan Pérez',
   })
