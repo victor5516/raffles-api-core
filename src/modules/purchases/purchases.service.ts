@@ -1046,6 +1046,7 @@ export class PurchasesService {
       addHeaders(worksheet);
 
       pmPurchases.forEach((p) => {
+        const isDuplicated = p.status === PurchaseStatus.DUPLICATED;
         worksheet.addRow({
           date: new Date(p.submittedAt).toLocaleString('es-VE'),
           customer: p.customer?.fullName || '-',
@@ -1053,7 +1054,9 @@ export class PurchasesService {
           email: p.customer?.email || '-',
           phone: p.customer?.phone || '-',
           ticketQty: p.ticketQuantity,
-          amount: Number(p.totalAmount).toFixed(2).replace('.', ','),
+          amount: isDuplicated
+            ? '0,00'
+            : Number(p.totalAmount).toFixed(2).replace('.', ','),
           reference: p.bankReference || '-',
           status: statusLabels[p.status] || p.status,
           seller: p.paymentMethod?.accountHolderName || '-',
@@ -1062,7 +1065,9 @@ export class PurchasesService {
       });
 
       const pmTotal = pmPurchases.reduce(
-        (sum, p) => sum + Number(p.totalAmount),
+        (sum, p) =>
+          sum +
+          (p.status === PurchaseStatus.DUPLICATED ? 0 : Number(p.totalAmount)),
         0,
       );
       totals.push({
@@ -1074,7 +1079,12 @@ export class PurchasesService {
       worksheet.addRow({});
       const totalRow = worksheet.addRow({
         phone: 'TOTAL:',
-        ticketQty: pmPurchases.reduce((sum, p) => sum + p.ticketQuantity, 0),
+        ticketQty: pmPurchases.reduce(
+          (sum, p) =>
+            sum +
+            (p.status === PurchaseStatus.DUPLICATED ? 0 : p.ticketQuantity),
+          0,
+        ),
         amount: pmTotal.toFixed(2).replace('.', ','),
       });
       totalRow.font = { bold: true };
