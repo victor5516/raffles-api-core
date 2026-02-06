@@ -102,6 +102,9 @@ export class Purchase {
   @JoinColumn({ name: 'verified_by_admin_id' })
   verifiedByAdmin?: Admin;
 
+  @Column({ name: 'audit_reviewed_at', type: 'timestamp', nullable: true })
+  auditReviewedAt: Date | null;
+
   @Column('integer', { array: true, nullable: true, name: 'ticket_numbers' })
   ticketNumbers: number[];
 

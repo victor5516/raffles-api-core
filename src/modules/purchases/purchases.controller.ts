@@ -325,6 +325,31 @@ export class PurchasesController {
     return this.purchasesService.updateStatus(uid, updateDto, user.role, user.uid);
   }
 
+  @Patch(':uid/audit')
+  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @ApiOperation({
+    summary: 'Marcar compra como auditada',
+    description:
+      'Registra que un Admin revisó la aprobación (doble check). Para compras verificadas por IA que ya fueron revisadas por un humano.',
+  })
+  @ApiBearerAuth('JWT-auth')
+  @ApiParam({
+    name: 'uid',
+    description: 'UID de la compra a marcar como auditada',
+    type: String,
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Compra marcada como auditada exitosamente',
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({ status: 404, description: 'Compra no encontrada' })
+  markAsAudited(@Param('uid') uid: string, @ActiveUser() user: Admin) {
+    return this.purchasesService.markAsAudited(uid, user.uid);
+  }
+
   @Delete(':uid')
   @Auth(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Eliminar una compra' })

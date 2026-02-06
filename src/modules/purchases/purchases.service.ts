@@ -328,6 +328,7 @@ export class PurchasesService {
         purchase.verifiedAt = new Date();
         purchase.verificationSource = VerificationSource.AI;
         purchase.verifiedByAdmin = null;
+        purchase.auditReviewedAt = null;
       } else {
         // Log detallado del motivo de falla
         this.logger.warn(
@@ -387,6 +388,7 @@ export class PurchasesService {
       if (status === PurchaseStatus.VERIFIED) {
         purchase.verifiedAt = new Date();
         purchase.verificationSource = VerificationSource.ADMIN;
+        purchase.auditReviewedAt = new Date();
         if (adminId) {
           purchase.verifiedByAdmin = { uid: adminId } as any;
         }
@@ -403,6 +405,22 @@ export class PurchasesService {
 
       return purchase;
     });
+  }
+
+  /**
+   * Marks a purchase as audited (double-check by Admin on an AI-verified purchase).
+   * Sets auditReviewedAt and optionally verifiedByAdmin if not already set.
+   */
+  async markAsAudited(uid: string, adminId: string) {
+    const purchase = await this.purchaseRepository.findOne({ where: { uid } });
+    if (!purchase) throw new NotFoundException('Purchase not found');
+
+    purchase.auditReviewedAt = new Date();
+    if (!purchase.verifiedByAdmin) {
+      purchase.verifiedByAdmin = { uid: adminId } as any;
+    }
+    await this.purchaseRepository.save(purchase);
+    return this.findOne(uid);
   }
 
   /**
@@ -517,6 +535,7 @@ export class PurchasesService {
             purchase.verifiedAt = new Date();
           }
           purchase.verificationSource = VerificationSource.ADMIN;
+          purchase.auditReviewedAt = new Date();
           if (adminId) {
             purchase.verifiedByAdmin = { uid: adminId } as any;
           }
