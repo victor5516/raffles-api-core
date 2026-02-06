@@ -35,6 +35,9 @@ export class PaymentMethod {
   @Column({ name: 'external_id', nullable: true })
   externalId: string;
 
+  @Column({ name: 'ai_verification_enabled', type: 'boolean', default: true })
+  aiVerificationEnabled: boolean;
+
   @OneToMany(() => Purchase, (purchase) => purchase.paymentMethod)
   purchases: Purchase[];
 }

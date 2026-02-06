@@ -72,7 +72,7 @@ export class PurchasesService {
     createDto: CreatePurchaseDto,
     file: Express.Multer.File | undefined,
   ) {
-    const createdPurchase = await this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       // 1. Recuperar Raffle (findOne con lock) para ticketPrice y config de promociones
       const raffle = await this.lockAndValidateRaffle(
         manager,
@@ -129,9 +129,11 @@ export class PurchasesService {
         ticketNumbers: ticketNumbers, // Saved immediately for SPECIFIC type
       });
 
-      return await manager.save(Purchase, purchase);
+      return { purchase: await manager.save(Purchase, purchase), paymentMethod };
     });
 
+    const createdPurchase = result.purchase;
+    createdPurchase.paymentMethod = result.paymentMethod;
     // 5. Post-Process (Async Notifications)
     await this.notifyPostPurchase(createdPurchase, 'created');
 
@@ -152,7 +154,7 @@ export class PurchasesService {
       );
     }
 
-    const createdPurchase = await this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       // Resolve external IDs to internal Entities
       const raffle = await this.resolveRaffle(manager, webhook.raffle_id);
       const paymentMethod = await this.resolvePaymentMethod(
@@ -197,9 +199,11 @@ export class PurchasesService {
       // Note: If VERIFIED and no numbers provided, we might want to auto-assign here.
       // Logic left optional based on business requirements.
 
-      return await manager.save(Purchase, purchase);
+      return { purchase: await manager.save(Purchase, purchase), paymentMethod };
     });
 
+    const createdPurchase = result.purchase;
+    createdPurchase.paymentMethod = result.paymentMethod;
     await this.notifyPostPurchase(createdPurchase, 'created_audit');
     return createdPurchase;
   }
@@ -1330,14 +1334,16 @@ export class PurchasesService {
   }
 
   private async notifyPostPurchase(purchase: Purchase, eventType: string) {
-    // 1. Send to SQS
-    try {
-      await this.sqsService.sendPurchaseCreatedMessage(purchase);
-    } catch (err) {
-      this.logger.error(
-        'Failed to send purchase created message to SQS.',
-        err instanceof Error ? err.stack : String(err),
-      );
+    // 1. Send to SQS (only when payment method has AI verification enabled)
+    if (purchase.paymentMethod?.aiVerificationEnabled !== false) {
+      try {
+        await this.sqsService.sendPurchaseCreatedMessage(purchase);
+      } catch (err) {
+        this.logger.error(
+          'Failed to send purchase created message to SQS.',
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     }
 
     // 2. Emit Real-time Event

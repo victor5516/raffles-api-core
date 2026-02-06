@@ -4,6 +4,7 @@ import {
   IsNumber,
   IsUUID,
   IsOptional,
+  IsBoolean,
   Min,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
@@ -69,4 +70,16 @@ export class CreatePaymentMethodDto {
   @IsNotEmpty()
   @IsUUID()
   currency_id: string;
+
+  @ApiPropertyOptional({
+    description: 'Si la verificación por IA está habilitada para este método de pago',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined;
+    return value === true || value === 'true';
+  })
+  @IsBoolean()
+  ai_verification_enabled?: boolean;
 }

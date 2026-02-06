@@ -57,6 +57,7 @@ export class PaymentMethodsService {
       minimumPaymentAmount: createDto.minimum_payment_amount,
       currencyId: createDto.currency_id,
       order: createDto.order ?? 0,
+      aiVerificationEnabled: createDto.ai_verification_enabled ?? true,
     };
 
     return this.create(entityLike);
@@ -166,6 +167,8 @@ export class PaymentMethodsService {
     if (updateDto.currency_id) updateEntityLike.currencyId = updateDto.currency_id;
     if (updateDto.accountHolderName) updateEntityLike.accountHolderName = updateDto.accountHolderName;
     if (updateDto.order !== undefined) updateEntityLike.order = updateDto.order;
+    if (updateDto.ai_verification_enabled !== undefined)
+      updateEntityLike.aiVerificationEnabled = updateDto.ai_verification_enabled;
     return this.update(uid, updateEntityLike);
   }
 
