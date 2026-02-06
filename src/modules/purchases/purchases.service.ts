@@ -424,8 +424,8 @@ export class PurchasesService {
   }
 
   /**
-   * Full update of a purchase (Super Admin only).
-   * All fields are optional; only provided fields are updated.
+   * Full update of a purchase.
+   * Super Admin: all fields optional. Verifier: only notes.
    * Runs in a transaction. Validates raffle, payment method, customer, and ticket numbers when provided.
    */
   async update(
@@ -433,7 +433,12 @@ export class PurchasesService {
     updateDto: UpdatePurchaseDto,
     file?: Express.Multer.File,
     adminId?: string,
+    adminRole?: AdminRole,
   ) {
+    const effectiveDto: UpdatePurchaseDto =
+      adminRole === AdminRole.VERIFIER ? { notes: updateDto.notes } : updateDto;
+    const effectiveFile = adminRole === AdminRole.VERIFIER ? undefined : file;
+
     await this.dataSource.transaction(async (manager) => {
       const purchase = await manager.findOne(Purchase, {
         where: { uid },
@@ -441,48 +446,48 @@ export class PurchasesService {
       });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
-      if (updateDto.raffleId !== undefined) {
+      if (effectiveDto.raffleId !== undefined) {
         const raffle = await manager.findOne(Raffle, {
-          where: { uid: updateDto.raffleId },
+          where: { uid: effectiveDto.raffleId },
         });
         if (!raffle) throw new NotFoundException('Raffle not found');
         if (raffle.status !== RaffleStatus.ACTIVE) {
           throw new BadRequestException('Raffle is not active');
         }
-        purchase.raffleId = updateDto.raffleId;
+        purchase.raffleId = effectiveDto.raffleId;
       }
 
-      if (updateDto.paymentMethodId !== undefined) {
+      if (effectiveDto.paymentMethodId !== undefined) {
         const paymentMethod = await manager.findOne(PaymentMethod, {
-          where: { uid: updateDto.paymentMethodId },
+          where: { uid: effectiveDto.paymentMethodId },
         });
         if (!paymentMethod) {
           throw new NotFoundException('Payment method not found');
         }
-        purchase.paymentMethodId = updateDto.paymentMethodId;
+        purchase.paymentMethodId = effectiveDto.paymentMethodId;
       }
 
-      if (updateDto.customer !== undefined) {
-        const customer = await this.getOrCreateCustomer(manager, updateDto.customer);
+      if (effectiveDto.customer !== undefined) {
+        const customer = await this.getOrCreateCustomer(manager, effectiveDto.customer);
         purchase.customerId = customer.uid;
-      } else if (updateDto.customerId !== undefined) {
+      } else if (effectiveDto.customerId !== undefined) {
         const customer = await manager.findOne(Customer, {
-          where: { uid: updateDto.customerId },
+          where: { uid: effectiveDto.customerId },
         });
         if (!customer) throw new NotFoundException('Customer not found');
-        purchase.customerId = updateDto.customerId;
+        purchase.customerId = effectiveDto.customerId;
       }
 
       const raffle = purchase.raffle ?? (await manager.findOne(Raffle, { where: { uid: purchase.raffleId } }));
 
-      if (updateDto.ticket_numbers !== undefined) {
-        const numbers = updateDto.ticket_numbers;
+      if (effectiveDto.ticket_numbers !== undefined) {
+        const numbers = effectiveDto.ticket_numbers;
         if (numbers.length === 0) {
           throw new BadRequestException('ticket_numbers must contain at least one number');
         }
-        if (updateDto.ticket_quantity !== undefined && numbers.length !== updateDto.ticket_quantity) {
+        if (effectiveDto.ticket_quantity !== undefined && numbers.length !== effectiveDto.ticket_quantity) {
           throw new BadRequestException(
-            `ticket_quantity (${updateDto.ticket_quantity}) must match ticket_numbers length (${numbers.length})`,
+            `ticket_quantity (${effectiveDto.ticket_quantity}) must match ticket_numbers length (${numbers.length})`,
           );
         }
         if (!raffle) throw new NotFoundException('Raffle not found');
@@ -509,28 +514,28 @@ export class PurchasesService {
         }
         purchase.ticketNumbers = numbers;
         purchase.ticketQuantity = numbers.length;
-      } else if (updateDto.ticket_quantity !== undefined) {
+      } else if (effectiveDto.ticket_quantity !== undefined) {
         const existingCount = purchase.ticketNumbers?.length ?? 0;
-        if (existingCount > 0 && updateDto.ticket_quantity !== existingCount) {
+        if (existingCount > 0 && effectiveDto.ticket_quantity !== existingCount) {
           throw new BadRequestException(
             `ticket_quantity must match the number of assigned tickets (${existingCount})`,
           );
         }
-        purchase.ticketQuantity = updateDto.ticket_quantity;
+        purchase.ticketQuantity = effectiveDto.ticket_quantity;
       }
 
-      if (file) {
-        const key = await this.uploadPaymentScreenshot(file, purchase.raffleId);
+      if (effectiveFile) {
+        const key = await this.uploadPaymentScreenshot(effectiveFile, purchase.raffleId);
         if (key) purchase.paymentScreenshotUrl = key;
-      } else if (updateDto.payment_screenshot_url !== undefined) {
-        purchase.paymentScreenshotUrl = updateDto.payment_screenshot_url;
+      } else if (effectiveDto.payment_screenshot_url !== undefined) {
+        purchase.paymentScreenshotUrl = effectiveDto.payment_screenshot_url;
       }
 
-      if (updateDto.notes !== undefined) purchase.notes = updateDto.notes;
-      if (updateDto.bank_reference !== undefined) purchase.bankReference = updateDto.bank_reference;
-      if (updateDto.status !== undefined) {
-        purchase.status = updateDto.status;
-        if (updateDto.status === PurchaseStatus.VERIFIED) {
+      if (effectiveDto.notes !== undefined) purchase.notes = effectiveDto.notes;
+      if (effectiveDto.bank_reference !== undefined) purchase.bankReference = effectiveDto.bank_reference;
+      if (effectiveDto.status !== undefined) {
+        purchase.status = effectiveDto.status;
+        if (effectiveDto.status === PurchaseStatus.VERIFIED) {
           if (!purchase.verifiedAt) {
             purchase.verifiedAt = new Date();
           }
@@ -541,7 +546,7 @@ export class PurchasesService {
           }
         }
       }
-      if (updateDto.totalAmount !== undefined) purchase.totalAmount = updateDto.totalAmount;
+      if (effectiveDto.totalAmount !== undefined) purchase.totalAmount = effectiveDto.totalAmount;
 
       const ticketNumbersLength = purchase.ticketNumbers?.length;
       if (ticketNumbersLength != null && purchase.ticketQuantity !== ticketNumbersLength) {
@@ -1048,7 +1053,7 @@ export class PurchasesService {
           email: p.customer?.email || '-',
           phone: p.customer?.phone || '-',
           ticketQty: p.ticketQuantity,
-          amount: Number(p.totalAmount).toFixed(2),
+          amount: Number(p.totalAmount).toFixed(2).replace('.', ','),
           reference: p.bankReference || '-',
           status: statusLabels[p.status] || p.status,
           seller: p.paymentMethod?.accountHolderName || '-',
@@ -1070,7 +1075,7 @@ export class PurchasesService {
       const totalRow = worksheet.addRow({
         phone: 'TOTAL:',
         ticketQty: pmPurchases.reduce((sum, p) => sum + p.ticketQuantity, 0),
-        amount: pmTotal.toFixed(2),
+        amount: pmTotal.toFixed(2).replace('.', ','),
       });
       totalRow.font = { bold: true };
     }
@@ -1094,7 +1099,7 @@ export class PurchasesService {
     summarySheet.addRow({});
     const grandTotalRow = summarySheet.addRow({
       paymentMethod: 'TOTAL GENERAL',
-      total: grandTotal.toFixed(2),
+      total: grandTotal.toFixed(2).replace('.', ','),
     });
     grandTotalRow.font = { bold: true };
 

@@ -13,6 +13,7 @@ import {
   MessageEvent,
   Headers,
   UnauthorizedException,
+  ForbiddenException,
   Res,
 } from '@nestjs/common';
 import {
@@ -37,7 +38,7 @@ import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { ExportPurchasesDto } from './dto/export-purchases.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { AdminAuth, Auth } from '../auth/decorators/admin-auth.decorator';
+import { Auth } from '../auth/decorators/admin-auth.decorator';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 import { ActiveUser } from '../auth/decorators/active-user.decorator';
 import { Admin } from '../auth/entities/admin.entity';
@@ -251,11 +252,11 @@ export class PurchasesController {
       storage: memoryStorage(),
     }),
   )
-  @Auth(AdminRole.SUPER_ADMIN)
+  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
   @ApiOperation({
-    summary: 'Actualizar una compra (todos los campos)',
+    summary: 'Actualizar una compra',
     description:
-      'Solo Super Admin. Permite editar todos los campos de la compra, incluido comprobante y números asignados. Acepta application/json o multipart/form-data para reemplazar el comprobante.',
+      'Super Admin puede editar todos los campos. Verificadores solo pueden editar el campo notas. Acepta application/json o multipart/form-data para reemplazar el comprobante (solo Super Admin).',
   })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
@@ -272,7 +273,7 @@ export class PurchasesController {
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({
     status: 403,
-    description: 'Solo Super Admin puede editar la compra completa',
+    description: 'Verificadores solo pueden actualizar el campo notas',
   })
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
   async update(
@@ -281,6 +282,19 @@ export class PurchasesController {
     @UploadedFile() file?: Express.Multer.File,
     @ActiveUser() user?: Admin,
   ) {
+    if (user?.role === AdminRole.VERIFIER) {
+      if (file) {
+        throw new ForbiddenException('Solo puede actualizar el campo notas.');
+      }
+      const keysWithValue = (Object.keys(updateDto) as (keyof UpdatePurchaseDto)[]).filter(
+        (k) => updateDto[k] !== undefined && updateDto[k] !== '',
+      );
+      const onlyNotes = keysWithValue.length === 0 || keysWithValue.every((k) => k === 'notes');
+      if (!onlyNotes) {
+        throw new ForbiddenException('Solo puede actualizar el campo notas.');
+      }
+    }
+
     const dto = updateDto as { customer?: unknown; ticket_numbers?: unknown };
     if (typeof dto.customer === 'string') {
       try {
@@ -296,7 +310,7 @@ export class PurchasesController {
         // leave as-is
       }
     }
-    return this.purchasesService.update(uid, updateDto, file, user?.uid);
+    return this.purchasesService.update(uid, updateDto, file, user?.uid, user?.role);
   }
 
   @Patch(':uid/status')
