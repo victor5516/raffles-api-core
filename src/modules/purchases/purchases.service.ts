@@ -260,7 +260,15 @@ export class PurchasesService {
         .createQueryBuilder('p')
         .where('p.uid != :uid', { uid: purchaseId })
         .andWhere(
-          "REGEXP_REPLACE(UPPER(p.bank_reference), '[^A-Z0-9]', '', 'g') = :ref",
+          `(
+            REGEXP_REPLACE(UPPER(p.bank_reference), '[^A-Z0-9]', '', 'g') = :ref
+            OR (
+              p.ai_analysis_result IS NOT NULL
+              AND p.ai_analysis_result->>'reference' IS NOT NULL
+              AND p.ai_analysis_result->>'reference' != ''
+              AND REGEXP_REPLACE(UPPER(COALESCE(p.ai_analysis_result->>'reference', '')), '[^A-Z0-9]', '', 'g') = :ref
+            )
+          )`,
           { ref: normalizedAiRef },
         )
         .getOne();
