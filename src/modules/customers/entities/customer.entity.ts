@@ -24,6 +24,9 @@ export class Customer {
   @Column({ nullable: true })
   phone: string;
 
+  @Column({ type: 'jsonb', nullable: true })
+  location: Record<string, any>;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

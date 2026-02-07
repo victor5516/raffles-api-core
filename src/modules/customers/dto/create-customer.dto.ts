@@ -1,37 +1,38 @@
 import {
-  IsOptional,
+  IsNotEmpty,
   IsString,
   IsEmail,
+  IsOptional,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CustomerLocationDto } from './customer-location.dto';
 
-export class UpdateCustomerDto {
-  @ApiPropertyOptional({
+export class CreateCustomerDto {
+  @ApiProperty({
     description: 'Número de cédula del cliente',
     example: '1234567890',
   })
-  @IsOptional()
+  @IsNotEmpty()
   @IsString()
-  nationalId?: string;
+  nationalId: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     description: 'Nombre completo del cliente',
     example: 'Juan Pérez',
   })
-  @IsOptional()
+  @IsNotEmpty()
   @IsString()
-  fullName?: string;
+  fullName: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     description: 'Email del cliente',
     example: 'juan.perez@example.com',
   })
-  @IsOptional()
+  @IsNotEmpty()
   @IsEmail()
-  email?: string;
+  email: string;
 
   @ApiPropertyOptional({
     description: 'Teléfono del cliente',

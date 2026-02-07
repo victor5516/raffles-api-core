@@ -263,6 +263,9 @@ export class CustomersService {
     if (updateDto.phone !== undefined) {
       customer.phone = updateDto.phone;
     }
+    if (updateDto.location !== undefined) {
+      customer.location = updateDto.location as Record<string, any>;
+    }
 
     return await this.customerRepository.save(customer);
   }

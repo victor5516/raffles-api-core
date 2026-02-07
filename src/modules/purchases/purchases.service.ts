@@ -1312,6 +1312,9 @@ export class PurchasesService {
       existingCustomer.fullName = data.full_name || data.fullName;
       existingCustomer.email = data.email;
       existingCustomer.phone = data.phone || existingCustomer.phone;
+      if (data.location !== undefined) {
+        existingCustomer.location = data.location;
+      }
       return await manager.save(Customer, existingCustomer);
     }
 
@@ -1320,6 +1323,7 @@ export class PurchasesService {
       fullName: data.full_name || data.fullName,
       email: data.email,
       phone: data.phone,
+      location: data.location,
     });
     return await manager.save(Customer, newCustomer);
   }

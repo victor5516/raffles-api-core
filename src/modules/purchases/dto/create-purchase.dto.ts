@@ -8,9 +8,11 @@ import {
   IsArray,
   ArrayMinSize,
   IsInt,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CustomerLocationDto } from '../../customers/dto/customer-location.dto';
 
 export class CustomerDto {
   @ApiProperty({
@@ -44,6 +46,15 @@ export class CustomerDto {
   @IsOptional()
   @IsString()
   phone?: string;
+
+  @ApiPropertyOptional({
+    description: 'Ubicación del cliente (estado, etc.)',
+    type: CustomerLocationDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CustomerLocationDto)
+  location?: CustomerLocationDto;
 }
 
 export class CreatePurchaseDto {
