@@ -7,7 +7,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository, ILike } from 'typeorm';
+import { DataSource, EntityManager, Repository, ILike, Brackets } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as ExcelJS from 'exceljs';
 import {
@@ -260,16 +260,15 @@ export class PurchasesService {
         .createQueryBuilder('p')
         .where('p.uid != :uid', { uid: purchaseId })
         .andWhere(
-          `(
-            REGEXP_REPLACE(UPPER(p.bank_reference), '[^A-Z0-9]', '', 'g') = :ref
-            OR (
-              p.ai_analysis_result IS NOT NULL
-              AND p.ai_analysis_result->>'reference' IS NOT NULL
-              AND p.ai_analysis_result->>'reference' != ''
-              AND REGEXP_REPLACE(UPPER(COALESCE(p.ai_analysis_result->>'reference', '')), '[^A-Z0-9]', '', 'g') = :ref
-            )
-          )`,
-          { ref: normalizedAiRef },
+          new Brackets((qb) => {
+            qb.where(
+              "REGEXP_REPLACE(UPPER(p.bank_reference), '[^A-Z0-9]', '', 'g') = :ref",
+              { ref: normalizedAiRef },
+            ).orWhere(
+              "p.ai_analysis_result->>'reference' IS NOT NULL AND p.ai_analysis_result->>'reference' != '' AND REGEXP_REPLACE(UPPER(p.ai_analysis_result->>'reference'), '[^A-Z0-9]', '', 'g') = :ref",
+              { ref: normalizedAiRef },
+            );
+          }),
         )
         .getOne();
 
