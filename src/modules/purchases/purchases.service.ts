@@ -373,8 +373,9 @@ export class PurchasesService {
       const purchase = await manager.findOne(Purchase, { where: { uid } });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
-      // Business rule: VERIFIER can only verify, not reject
-      if (adminRole === AdminRole.VERIFIER && status === PurchaseStatus.REJECTED) {
+      // Business rule: VERIFIER and VERIFIER_EXPORT can only verify, not reject
+      const isVerifierLike = adminRole === AdminRole.VERIFIER || adminRole === AdminRole.VERIFIER_EXPORT;
+      if (isVerifierLike && status === PurchaseStatus.REJECTED) {
         throw new ForbiddenException('Verifiers cannot reject purchases. Only verification is allowed.');
       }
 
@@ -435,9 +436,10 @@ export class PurchasesService {
     adminId?: string,
     adminRole?: AdminRole,
   ) {
+    const isVerifierLike = adminRole === AdminRole.VERIFIER || adminRole === AdminRole.VERIFIER_EXPORT;
     const effectiveDto: UpdatePurchaseDto =
-      adminRole === AdminRole.VERIFIER ? { notes: updateDto.notes } : updateDto;
-    const effectiveFile = adminRole === AdminRole.VERIFIER ? undefined : file;
+      isVerifierLike ? { notes: updateDto.notes } : updateDto;
+    const effectiveFile = isVerifierLike ? undefined : file;
 
     await this.dataSource.transaction(async (manager) => {
       const purchase = await manager.findOne(Purchase, {

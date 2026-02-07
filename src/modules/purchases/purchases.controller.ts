@@ -101,7 +101,7 @@ export class PurchasesController {
   }
 
   @Get()
-  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @ApiOperation({ summary: 'Obtener todas las compras con filtros opcionales' })
   @ApiBearerAuth('JWT-auth')
   @ApiQuery({
@@ -193,7 +193,7 @@ export class PurchasesController {
   }
 
   @Post('export')
-  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @Auth([AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @ApiOperation({ summary: 'Exportar compras a Excel' })
   @ApiBearerAuth('JWT-auth')
   @ApiProduces('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
@@ -252,7 +252,7 @@ export class PurchasesController {
       storage: memoryStorage(),
     }),
   )
-  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @ApiOperation({
     summary: 'Actualizar una compra',
     description:
@@ -282,7 +282,8 @@ export class PurchasesController {
     @UploadedFile() file?: Express.Multer.File,
     @ActiveUser() user?: Admin,
   ) {
-    if (user?.role === AdminRole.VERIFIER) {
+    const isVerifierLike = user?.role === AdminRole.VERIFIER || user?.role === AdminRole.VERIFIER_EXPORT;
+    if (isVerifierLike) {
       if (file) {
         throw new ForbiddenException('Solo puede actualizar el campo notas.');
       }
@@ -314,7 +315,7 @@ export class PurchasesController {
   }
 
   @Patch(':uid/status')
-  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @ApiOperation({ summary: 'Actualizar el estado de una compra' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
@@ -340,7 +341,7 @@ export class PurchasesController {
   }
 
   @Patch(':uid/audit')
-  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @ApiOperation({
     summary: 'Marcar compra como auditada',
     description:
@@ -386,7 +387,7 @@ export class PurchasesController {
   }
 
   @Get('summary/by-raffle')
-  @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
+  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @ApiOperation({
     summary: 'Obtener resumen de órdenes por rifa y currency',
     description:
