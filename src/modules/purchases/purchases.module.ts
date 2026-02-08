@@ -2,12 +2,14 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PurchasesService } from './purchases.service';
 import { PurchasesController } from './purchases.controller';
+import { PurchasesCron } from './purchases.cron';
 import { Purchase } from './entities/purchase.entity';
 import { Ticket } from '../tickets/entities/ticket.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Raffle } from '../raffles/entities/raffle.entity';
 import { PaymentMethod } from '../payments/entities/payment-method.entity';
 import { Currency } from '../currencies/entities/currency.entity';
+import { GoogleSheetsService } from '../../common/services/google-sheets.service';
 // import { MailModule } from '../mail/mail.module';
 // import { PurchasesMailListener } from './listeners/purchases-mail.listener';
 
@@ -17,7 +19,7 @@ import { Currency } from '../currencies/entities/currency.entity';
     // MailModule, // Deshabilitado: SES no funciona
   ],
   controllers: [PurchasesController],
-  providers: [PurchasesService], // PurchasesMailListener removido: SES no funciona
+  providers: [PurchasesService, GoogleSheetsService, PurchasesCron], // PurchasesMailListener removido: SES no funciona
   exports: [PurchasesService],
 })
 export class PurchasesModule {}

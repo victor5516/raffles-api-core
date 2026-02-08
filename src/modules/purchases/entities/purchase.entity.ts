@@ -110,4 +110,7 @@ export class Purchase {
 
   @OneToMany(() => Ticket, (ticket) => ticket.purchase)
   tickets: Ticket[];
+
+  @Column({ name: 'exported_to_sheets', type: 'boolean', default: false })
+  exportedToSheets: boolean;
 }

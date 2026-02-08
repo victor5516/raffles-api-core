@@ -61,3 +61,5 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 uploads/*
 
 /certbot
+
+google-credentials.json
