@@ -11,7 +11,7 @@
     COPY . .
 
     # Build the application
-    RUN npm run build
+    RUN NODE_OPTIONS="--max-old-space-size=4096" npm run build
 
     # --- PRODUCTION STAGE ---
     FROM node:20-alpine AS production
