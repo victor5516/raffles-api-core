@@ -76,7 +76,7 @@ export class PurchasesCron {
           p.customer?.email ?? '-',
           p.customer?.phone ?? '-',
           p.ticketQuantity,
-          Number(p.totalAmount).toFixed(2),
+          Number(p.totalAmount).toFixed(2).replace('.', ','),
           p.bankReference ?? '-',
           STATUS_LABELS[p.status] ?? p.status,
           p.paymentMethod?.accountHolderName ?? '-',
