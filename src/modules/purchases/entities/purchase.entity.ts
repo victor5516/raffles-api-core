@@ -13,6 +13,19 @@ import { Customer } from '../../customers/entities/customer.entity';
 import { PaymentMethod } from '../../payments/entities/payment-method.entity';
 import { Ticket } from '../../tickets/entities/ticket.entity';
 import { Admin } from '../../auth/entities/admin.entity';
+
+export interface PaymentEntry {
+  amount: number;
+  reference: string;
+  currency: string;
+  evidenceUrl: string;
+  verified: boolean;
+  aiResult?: any;
+  reviewedBy?: string;
+  paymentMethodId?: string;
+  paymentMethodName?: string;
+}
+
 export enum PurchaseStatus {
   PENDING = 'pending',
   VERIFIED = 'verified',
@@ -56,9 +69,11 @@ export class Purchase {
   @Column({ name: 'ticket_quantity' })
   ticketQuantity: number;
 
+  /** @deprecated Use payments[].evidenceUrl instead */
   @Column({ name: 'payment_screenshot_url' })
   paymentScreenshotUrl: string;
 
+  /** @deprecated Use payments[].reference instead */
   @Column({ name: 'bank_reference' })
   bankReference: string;
 
@@ -113,4 +128,16 @@ export class Purchase {
 
   @Column({ name: 'exported_to_sheets', type: 'boolean', default: false })
   exportedToSheets: boolean;
+
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  payments: PaymentEntry[];
+
+  @Column({
+    name: 'total_paid',
+    type: 'numeric',
+    precision: 10,
+    scale: 2,
+    default: 0,
+  })
+  totalPaid: number;
 }

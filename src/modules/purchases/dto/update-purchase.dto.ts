@@ -5,14 +5,53 @@ import {
   IsNumber,
   IsArray,
   IsInt,
+  IsBoolean,
   Min,
   ValidateNested,
   IsUUID,
+  Allow,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { PurchaseStatus } from '../entities/purchase.entity';
 import { CustomerDto } from './create-purchase.dto';
+
+export class UpdatePaymentEntryDto {
+  @IsNumber()
+  @Min(0)
+  amount: number;
+
+  @IsString()
+  reference: string;
+
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @IsOptional()
+  @IsString()
+  evidenceUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  verified?: boolean;
+
+  @IsOptional()
+  @Allow()
+  aiResult?: any;
+
+  @IsOptional()
+  @IsString()
+  reviewedBy?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentMethodId?: string;
+
+  @IsOptional()
+  @IsString()
+  paymentMethodName?: string;
+}
 
 export class UpdatePurchaseDto {
   @ApiPropertyOptional({
@@ -139,4 +178,25 @@ export class UpdatePurchaseDto {
   @IsInt({ each: true })
   @Min(0, { each: true })
   ticket_numbers?: number[];
+
+  @ApiPropertyOptional({
+    description: 'Array de pagos (abonos) para reemplazar los existentes',
+    type: [UpdatePaymentEntryDto],
+    isArray: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => UpdatePaymentEntryDto)
+  payments?: UpdatePaymentEntryDto[];
 }

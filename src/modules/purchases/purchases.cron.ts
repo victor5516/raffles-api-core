@@ -69,23 +69,60 @@ export class PurchasesCron {
       const byPaymentMethod = new Map<string, any[][]>();
 
       for (const p of purchases) {
-        const row: any[] = [
-          new Date(p.submittedAt).toLocaleString('es-VE'),
-          p.customer?.fullName ?? '-',
-          p.customer?.nationalId ?? '-',
-          p.customer?.email ?? '-',
-          p.customer?.phone ?? '-',
-          p.ticketQuantity,
-          Number(p.totalAmount).toFixed(2).replace('.', ','),
-          p.bankReference ?? '-',
-          STATUS_LABELS[p.status] ?? p.status,
-          p.paymentMethod?.accountHolderName ?? '-',
-          p.raffle?.title ?? '-',
-        ];
-        const sheetName = toSheetName(p.paymentMethod?.name ?? 'Unknown');
-        const rows = byPaymentMethod.get(sheetName) ?? [];
-        rows.push(row);
-        byPaymentMethod.set(sheetName, rows);
+        const payments = p.payments ?? [];
+        const date = new Date(p.submittedAt).toLocaleString('es-VE');
+        const customerName = p.customer?.fullName ?? '-';
+        const nationalId = p.customer?.nationalId ?? '-';
+        const email = p.customer?.email ?? '-';
+        const phone = p.customer?.phone ?? '-';
+        const statusLabel = STATUS_LABELS[p.status] ?? p.status;
+        const raffleName = p.raffle?.title ?? '-';
+        const fallbackSeller = p.paymentMethod?.accountHolderName ?? '-';
+
+        if (payments.length > 0) {
+          // 1 fila por cada pago (abono). Tickets solo en la primera fila.
+          for (let i = 0; i < payments.length; i++) {
+            const pay = payments[i];
+            const sheetName = toSheetName(
+              pay.paymentMethodName ?? p.paymentMethod?.name ?? 'Unknown',
+            );
+            const row: any[] = [
+              date,
+              customerName,
+              nationalId,
+              email,
+              phone,
+              i === 0 ? p.ticketQuantity : 0,
+              Number(pay.amount).toFixed(2).replace('.', ','),
+              pay.reference || '-',
+              statusLabel,
+              fallbackSeller,
+              raffleName,
+            ];
+            const rows = byPaymentMethod.get(sheetName) ?? [];
+            rows.push(row);
+            byPaymentMethod.set(sheetName, rows);
+          }
+        } else {
+          // Legacy: compra sin payments[], 1 fila como antes
+          const sheetName = toSheetName(p.paymentMethod?.name ?? 'Unknown');
+          const row: any[] = [
+            date,
+            customerName,
+            nationalId,
+            email,
+            phone,
+            p.ticketQuantity,
+            Number(p.totalAmount).toFixed(2).replace('.', ','),
+            p.bankReference ?? '-',
+            statusLabel,
+            fallbackSeller,
+            raffleName,
+          ];
+          const rows = byPaymentMethod.get(sheetName) ?? [];
+          rows.push(row);
+          byPaymentMethod.set(sheetName, rows);
+        }
       }
 
       for (const [sheetName, rows] of byPaymentMethod) {
@@ -96,12 +133,19 @@ export class PurchasesCron {
         );
       }
 
+      const totalRows = Array.from(byPaymentMethod.values()).reduce(
+        (sum, rows) => sum + rows.length,
+        0,
+      );
+
       const ids = purchases.map((p) => p.uid);
       await this.purchaseRepository.update(
         { uid: In(ids) },
         { exportedToSheets: true },
       );
-      this.logger.log(`Exported ${purchases.length} purchases to Google Sheets`);
+      this.logger.log(
+        `Exported ${purchases.length} purchases (${totalRows} rows) to Google Sheets`,
+      );
     } catch (err) {
       this.logger.error(
         'Failed to export purchases to Google Sheets',

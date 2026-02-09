@@ -192,6 +192,28 @@ export class PurchasesController {
     return this.purchasesService.findAll(query);
   }
 
+  @Post('upload-evidence')
+  @Auth([AdminRole.SUPER_ADMIN])
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+    }),
+  )
+  @ApiOperation({ summary: 'Subir comprobante de pago a S3' })
+  @ApiBearerAuth('JWT-auth')
+  @ApiConsumes('multipart/form-data')
+  @ApiFile('file', true)
+  @ApiResponse({
+    status: 201,
+    description: 'Archivo subido exitosamente. Retorna key y url.',
+  })
+  @ApiResponse({ status: 400, description: 'Archivo requerido' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Solo Super Admin' })
+  async uploadEvidence(@UploadedFile() file: Express.Multer.File) {
+    return this.purchasesService.uploadEvidence(file);
+  }
+
   @Post('export')
   @Auth([AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @ApiOperation({ summary: 'Exportar compras a Excel' })
@@ -296,7 +318,7 @@ export class PurchasesController {
       }
     }
 
-    const dto = updateDto as { customer?: unknown; ticket_numbers?: unknown };
+    const dto = updateDto as { customer?: unknown; ticket_numbers?: unknown; payments?: unknown };
     if (typeof dto.customer === 'string') {
       try {
         dto.customer = JSON.parse(dto.customer) as unknown;
@@ -307,6 +329,13 @@ export class PurchasesController {
     if (typeof dto.ticket_numbers === 'string') {
       try {
         dto.ticket_numbers = JSON.parse(dto.ticket_numbers) as number[];
+      } catch {
+        // leave as-is
+      }
+    }
+    if (typeof dto.payments === 'string') {
+      try {
+        dto.payments = JSON.parse(dto.payments) as unknown;
       } catch {
         // leave as-is
       }

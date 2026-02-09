@@ -14,6 +14,58 @@ import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CustomerLocationDto } from '../../customers/dto/customer-location.dto';
 
+export class PaymentItemDto {
+  @ApiProperty({
+    description: 'Monto de este pago (abono)',
+    example: 25.0,
+    type: Number,
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
+  amount: number;
+
+  @ApiProperty({
+    description: 'Referencia bancaria de este pago',
+    example: 'REF123456789',
+  })
+  @IsString()
+  @IsNotEmpty()
+  reference: string;
+
+  @ApiPropertyOptional({
+    description: 'Símbolo de la moneda del pago',
+    example: 'USD',
+  })
+  @IsOptional()
+  @IsString()
+  currency?: string;
+
+  @ApiPropertyOptional({
+    description: 'URL del comprobante de pago',
+    example: 'https://example.com/screenshot.jpg',
+  })
+  @IsOptional()
+  @IsString()
+  evidenceUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'UID del método de pago para este abono (si difiere del principal)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsString()
+  paymentMethodId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Nombre del método de pago para este abono',
+    example: 'Zelle',
+  })
+  @IsOptional()
+  @IsString()
+  paymentMethodName?: string;
+}
+
 export class CustomerDto {
   @ApiProperty({
     description: 'Cédula o identificación nacional del cliente',
@@ -86,13 +138,13 @@ export class CreatePurchaseDto {
   @Min(1)
   ticket_quantity: number;
 
-  @ApiProperty({
-    description: 'Referencia bancaria del pago',
+  @ApiPropertyOptional({
+    description: 'Referencia bancaria del pago (requerido si no se envía payments[])',
     example: 'REF123456789',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  bank_reference: string;
+  bank_reference?: string;
 
   @ApiProperty({
     description: 'Datos del cliente (JSON string en multipart form)',
@@ -145,4 +197,25 @@ export class CreatePurchaseDto {
   @Min(0, { each: true })
   ticket_numbers?: number[];
 
+  @ApiPropertyOptional({
+    description:
+      'Array de pagos (abonos). Si se proporciona, se usa en lugar de bank_reference/payment_screenshot_url.',
+    type: [PaymentItemDto],
+    isArray: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PaymentItemDto)
+  payments?: PaymentItemDto[];
 }

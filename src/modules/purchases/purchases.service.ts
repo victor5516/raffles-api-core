@@ -14,6 +14,7 @@ import {
   Purchase,
   PurchaseStatus,
   VerificationSource,
+  PaymentEntry,
 } from './entities/purchase.entity';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
 import { Customer } from 'src/modules/customers/entities/customer.entity';
@@ -116,17 +117,49 @@ export class PurchasesService {
         createDto.raffleId,
       );
 
-      // 5. Persistence — Seguridad: no usar createDto.totalAmount; el backend es la única fuente de verdad del total.
+      // 5. Build payments array (multi-payment or backward-compat single)
+      const currencySymbol = paymentMethod.currency?.symbol ?? '';
+      let paymentsArray: PaymentEntry[];
+
+      if (createDto.payments && createDto.payments.length > 0) {
+        paymentsArray = createDto.payments.map((p) => ({
+          amount: Number(p.amount),
+          reference: p.reference,
+          currency: p.currency || currencySymbol,
+          evidenceUrl: p.evidenceUrl || screenshotKey || '',
+          verified: false,
+          paymentMethodId: p.paymentMethodId || createDto.paymentMethodId,
+          paymentMethodName: p.paymentMethodName || paymentMethod.name,
+        }));
+      } else {
+        paymentsArray = [
+          {
+            amount: totalAmountToPersist,
+            reference: createDto.bank_reference || '',
+            currency: currencySymbol,
+            evidenceUrl: screenshotKey || '',
+            verified: false,
+            paymentMethodId: createDto.paymentMethodId,
+            paymentMethodName: paymentMethod.name,
+          },
+        ];
+      }
+
+      const totalPaid = paymentsArray.reduce((sum, p) => sum + p.amount, 0);
+
+      // 6. Persistence — Seguridad: no usar createDto.totalAmount; el backend es la única fuente de verdad del total.
       const purchase = manager.create(Purchase, {
         raffleId: createDto.raffleId,
         paymentMethodId: createDto.paymentMethodId,
         ticketQuantity: createDto.ticket_quantity,
         totalAmount: totalAmountToPersist,
-        bankReference: createDto.bank_reference,
+        bankReference: createDto.bank_reference || paymentsArray[0]?.reference || '',
         paymentScreenshotUrl: screenshotKey,
         customerId: customer.uid,
         status: PurchaseStatus.PENDING,
         ticketNumbers: ticketNumbers, // Saved immediately for SPECIFIC type
+        payments: paymentsArray,
+        totalPaid,
       });
 
       return { purchase: await manager.save(Purchase, purchase), paymentMethod };
@@ -175,11 +208,29 @@ export class PurchasesService {
         screenshotKey = await this.uploadPaymentScreenshot(file, raffle.uid);
       }
 
+      const totalAmount = Number(webhook.total_amount);
+      const isVerified =
+        (webhook.status as PurchaseStatus) === PurchaseStatus.VERIFIED;
+      const currencySymbol = paymentMethod.currency?.symbol ?? '';
+
+      // Build payments array from audit webhook flat fields
+      const paymentsArray: PaymentEntry[] = [
+        {
+          amount: totalAmount,
+          reference: webhook.bank_reference || '',
+          currency: currencySymbol,
+          evidenceUrl: screenshotKey || '',
+          verified: isVerified,
+          paymentMethodId: paymentMethod.uid,
+          paymentMethodName: paymentMethod.name,
+        },
+      ];
+
       const purchase = manager.create(Purchase, {
         raffleId: raffle.uid,
         paymentMethodId: paymentMethod.uid,
         customerId: customer.uid,
-        totalAmount: Number(webhook.total_amount),
+        totalAmount,
         bankReference: webhook.bank_reference,
         ticketQuantity: Number(webhook.ticket_quantity),
         paymentScreenshotUrl: screenshotKey,
@@ -187,8 +238,9 @@ export class PurchasesService {
         submittedAt: webhook.created_at
           ? new Date(webhook.created_at)
           : new Date(),
-        verifiedAt:
-          webhook.status === PurchaseStatus.VERIFIED ? new Date() : null,
+        verifiedAt: isVerified ? new Date() : null,
+        payments: paymentsArray,
+        totalPaid: totalAmount,
       });
 
       // If legacy system provided specific numbers, map them
@@ -211,6 +263,7 @@ export class PurchasesService {
   /**
    * Handles the AI Lambda webhook response.
    * Validates Amount, Currency, and Reference against AI extraction.
+   * Supports multi-payment: searches the payments[] JSONB array for matching references.
    */
   async processAiWebhook(webhook: AiWebhookDto) {
     const { purchaseId, aiResult } = webhook;
@@ -245,9 +298,8 @@ export class PurchasesService {
         );
       }
 
-      // B. Duplicate Check (Fuzzy Reference Matching)
+      // B. Duplicate Check (Fuzzy Reference Matching) — also searches payments JSONB
       const normalizedAiRef = this.normalizeReference(aiData.reference);
-      // Si por alguna razón la referencia normalizada queda vacía, enviamos a revisión manual
       if (!normalizedAiRef) {
         return this.handleManualReview(
           manager,
@@ -264,10 +316,18 @@ export class PurchasesService {
             qb.where(
               "REGEXP_REPLACE(UPPER(p.bank_reference), '[^A-Z0-9]', '', 'g') = :ref",
               { ref: normalizedAiRef },
-            ).orWhere(
-              "p.ai_analysis_result->>'reference' IS NOT NULL AND p.ai_analysis_result->>'reference' != '' AND REGEXP_REPLACE(UPPER(p.ai_analysis_result->>'reference'), '[^A-Z0-9]', '', 'g') = :ref",
-              { ref: normalizedAiRef },
-            );
+            )
+              .orWhere(
+                "p.ai_analysis_result->>'reference' IS NOT NULL AND p.ai_analysis_result->>'reference' != '' AND REGEXP_REPLACE(UPPER(p.ai_analysis_result->>'reference'), '[^A-Z0-9]', '', 'g') = :ref",
+                { ref: normalizedAiRef },
+              )
+              .orWhere(
+                `EXISTS (
+                  SELECT 1 FROM jsonb_array_elements(p.payments) AS elem
+                  WHERE REGEXP_REPLACE(UPPER(elem->>'reference'), '[^A-Z0-9]', '', 'g') = :ref
+                )`,
+                { ref: normalizedAiRef },
+              );
           }),
         )
         .getOne();
@@ -283,74 +343,111 @@ export class PurchasesService {
         return this.serializePurchase(saved);
       }
 
-      // C. Amount Check (0.01 tolerance)
-      const amountDiff = Math.abs(purchase.totalAmount - aiData.amount);
-      const isAmountValid = amountDiff < 0.01;
+      // C. Find matching payment entry in payments[] array
+      const paymentsArray: PaymentEntry[] = purchase.payments ?? [];
+      let matchedPaymentIndex = -1;
 
-      // D. Currency Check
-      const expectedCurrency = purchase.paymentMethod?.currency;
-      const isCurrencyValid = expectedCurrency?.symbol === aiData.currency;
+      if (paymentsArray.length > 0) {
+        for (let i = 0; i < paymentsArray.length; i++) {
+          const entry = paymentsArray[i];
+          if (entry.verified) continue; // Skip already verified entries
+          const normalizedEntryRef = this.normalizeReference(entry.reference);
+          if (normalizedEntryRef && this.isReferenceMatch(normalizedEntryRef, normalizedAiRef)) {
+            matchedPaymentIndex = i;
+            break;
+          }
+        }
+      }
 
-      // E. Reference Check (Improved: endsWith OR contains for better matching)
+      // D. Fallback to legacy bankReference if no match in payments[]
       const normalizedUserRef = this.normalizeReference(purchase.bankReference);
+      const legacyRefMatch = normalizedUserRef
+        ? this.isReferenceMatch(normalizedUserRef, normalizedAiRef)
+        : false;
+
+      if (matchedPaymentIndex === -1 && !legacyRefMatch) {
+        this.logger.warn(
+          `AI Validation Failed for purchase ${purchaseId}: ` +
+          `No matching reference found in payments[] or bankReference. ` +
+          `AI ref="${normalizedAiRef}", bankRef="${normalizedUserRef}", ` +
+          `payments refs=[${paymentsArray.map((p) => this.normalizeReference(p.reference)).join(', ')}]`,
+        );
+        return this.handleManualReview(
+          manager,
+          purchase,
+          'AI Validation Failed: No matching reference found',
+        );
+      }
+
+      // E. Amount Check against the matched payment entry (or totalAmount for legacy)
+      let isAmountValid: boolean;
+      if (matchedPaymentIndex >= 0) {
+        const matchedEntry = paymentsArray[matchedPaymentIndex];
+        const amountDiff = Math.abs(matchedEntry.amount - aiData.amount);
+        isAmountValid = amountDiff < 0.01;
+      } else {
+        // Legacy: compare against totalAmount
+        const amountDiff = Math.abs(purchase.totalAmount - aiData.amount);
+        isAmountValid = amountDiff < 0.01;
+      }
+
+      const expectedCurrency = purchase.paymentMethod?.currency;
 
       // Log para depuración
       this.logger.debug(
         `Reference validation for purchase ${purchaseId}: ` +
-        `UserRef="${purchase.bankReference}" -> Normalized="${normalizedUserRef}", ` +
+        `matchedPaymentIndex=${matchedPaymentIndex}, ` +
         `AiRef="${aiData.reference}" -> Normalized="${normalizedAiRef}", ` +
-        `Amount: ${purchase.totalAmount} vs ${aiData.amount} (diff=${amountDiff.toFixed(4)}), ` +
-        `Currency: ${expectedCurrency?.symbol} vs ${aiData.currency}`
+        `Amount valid=${isAmountValid}, ` +
+        `Currency: ${expectedCurrency?.symbol} vs ${aiData.currency}`,
       );
 
-      let isRefValid = false;
-      if (normalizedUserRef && normalizedAiRef) {
-        // Verificar si una termina con la otra (caso original)
-        const endsWithMatch =
-          normalizedAiRef.endsWith(normalizedUserRef) ||
-          normalizedUserRef.endsWith(normalizedAiRef);
-
-        // Verificar si una contiene a la otra (para casos como 413134749064265728 contiene 265728)
-        const containsMatch =
-          normalizedAiRef.includes(normalizedUserRef) ||
-          normalizedUserRef.includes(normalizedAiRef);
-
-        // Aceptar si hay coincidencia por endsWith O si la referencia más corta tiene al menos 4 caracteres y está contenida
-        const minLengthForContains = 4;
-        const shorterRef = normalizedUserRef.length <= normalizedAiRef.length
-          ? normalizedUserRef
-          : normalizedAiRef;
-        const longerRef = normalizedUserRef.length > normalizedAiRef.length
-          ? normalizedUserRef
-          : normalizedAiRef;
-
-        isRefValid = endsWithMatch ||
-          (containsMatch && shorterRef.length >= minLengthForContains && longerRef.includes(shorterRef));
+      if (!isAmountValid) {
+        this.logger.warn(
+          `AI Validation Failed for purchase ${purchaseId}: Amount mismatch. ` +
+          `AI amount=${aiData.amount}`,
+        );
+        return this.handleManualReview(
+          manager,
+          purchase,
+          `AI Validation Failed: Amount mismatch`,
+        );
       }
 
-      // --- Decision Phase ---
+      // --- Update Phase ---
 
-      if (isAmountValid && isRefValid) {
+      // Mark the matched payment entry as verified
+      if (matchedPaymentIndex >= 0) {
+        paymentsArray[matchedPaymentIndex].verified = true;
+        paymentsArray[matchedPaymentIndex].aiResult = aiResult;
+        purchase.payments = [...paymentsArray]; // Trigger JSONB update
+      } else if (paymentsArray.length > 0) {
+        // Legacy fallback: mark the first unverified entry
+        const firstUnverified = paymentsArray.findIndex((p) => !p.verified);
+        if (firstUnverified >= 0) {
+          paymentsArray[firstUnverified].verified = true;
+          paymentsArray[firstUnverified].aiResult = aiResult;
+          purchase.payments = [...paymentsArray];
+        }
+      }
+
+      // Recalculate totalPaid from verified payments
+      const newTotalPaid = (purchase.payments ?? [])
+        .filter((p) => p.verified)
+        .reduce((sum, p) => sum + Number(p.amount), 0);
+      purchase.totalPaid = Number(newTotalPaid.toFixed(2));
+
+      // Determine final status
+      if (purchase.totalPaid >= Number(purchase.totalAmount)) {
         purchase.status = PurchaseStatus.VERIFIED;
         purchase.verifiedAt = new Date();
         purchase.verificationSource = VerificationSource.AI;
         purchase.verifiedByAdmin = null;
         purchase.auditReviewedAt = null;
-      } else {
-        // Log detallado del motivo de falla
-        this.logger.warn(
-          `AI Validation Failed for purchase ${purchaseId}: ` +
-          `Amount=${isAmountValid} (${purchase.totalAmount} vs ${aiData.amount}), ` +
-          `Ref=${isRefValid} (User: "${normalizedUserRef}", AI: "${normalizedAiRef}")`
-        );
-        return this.handleManualReview(
-          manager,
-          purchase,
-          `AI Validation Failed: Amount=${isAmountValid}, Ref=${isRefValid}`,
-        );
       }
+      // If totalPaid < totalAmount, keep current status (PENDING) — partial payment
 
-      // If transition to VERIFIED -> Persist aiAnalysisResult, status, verifiedAt; then assign tickets if needed
+      // If transition to VERIFIED -> assign tickets if needed
       if (purchase.status === PurchaseStatus.VERIFIED && !wasVerified) {
         const saved = await manager.save(Purchase, purchase);
         this.emitStatusChange(saved, 'verified', 'AI validation passed');
@@ -556,6 +653,24 @@ export class PurchasesService {
         }
       }
       if (effectiveDto.totalAmount !== undefined) purchase.totalAmount = effectiveDto.totalAmount;
+
+      if (effectiveDto.payments !== undefined) {
+        purchase.payments = effectiveDto.payments.map((p) => ({
+          amount: Number(p.amount),
+          reference: p.reference ?? '',
+          currency: p.currency ?? '',
+          evidenceUrl: p.evidenceUrl ?? '',
+          verified: p.verified ?? false,
+          aiResult: p.aiResult,
+          reviewedBy: p.reviewedBy,
+          paymentMethodId: p.paymentMethodId ?? purchase.paymentMethodId,
+          paymentMethodName: p.paymentMethodName,
+        }));
+        purchase.totalPaid = purchase.payments.reduce(
+          (sum, p) => sum + Number(p.amount),
+          0,
+        );
+      }
 
       const ticketNumbersLength = purchase.ticketNumbers?.length;
       if (ticketNumbersLength != null && purchase.ticketQuantity !== ticketNumbersLength) {
@@ -818,12 +933,18 @@ export class PurchasesService {
         purchase.paymentMethod?.imageUrl,
       );
 
+      const paymentsWithCdn = (purchase.payments ?? []).map((p) => ({
+        ...p,
+        evidenceUrl: this.s3Service.getCdnUrl(p.evidenceUrl) ?? p.evidenceUrl,
+      }));
+
       const { currency, ...paymentMethodRest } =
         purchase.paymentMethod || {};
       return {
         ...purchase,
         paymentScreenshotUrl:
           paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
+        payments: paymentsWithCdn,
         raffle: purchase.raffle
           ? {
               ...purchase.raffle,
@@ -878,12 +999,18 @@ export class PurchasesService {
       purchase.paymentMethod?.imageUrl,
     );
 
+    const paymentsWithCdn = (purchase.payments ?? []).map((p) => ({
+      ...p,
+      evidenceUrl: this.s3Service.getCdnUrl(p.evidenceUrl) ?? p.evidenceUrl,
+    }));
+
     const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
     return {
       ...purchase,
       ticketNumbers: purchase.ticketNumbers || [],
       paymentScreenshotUrl:
         paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
+      payments: paymentsWithCdn,
       raffle: purchase.raffle
         ? {
             ...purchase.raffle,
@@ -904,6 +1031,20 @@ export class PurchasesService {
     const result = await this.purchaseRepository.delete(uid);
     if (result.affected === 0)
       throw new NotFoundException('Purchase not found');
+  }
+
+  /**
+   * Uploads a payment evidence file to S3 and returns the key + CDN URL.
+   */
+  async uploadEvidence(
+    file: Express.Multer.File,
+  ): Promise<{ key: string; url: string }> {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+    const key = await this.uploadPaymentScreenshot(file, 'evidence');
+    const url = this.s3Service.getCdnUrl(key);
+    return { key, url: url || key };
   }
 
   async exportPurchases(filters: ExportPurchasesDto): Promise<Buffer> {
@@ -1294,6 +1435,44 @@ export class PurchasesService {
     return cleaned || null;
   }
 
+  /**
+   * Checks if two normalized references match using endsWith or contains logic.
+   * Both refs must already be normalized (uppercase, alphanumeric only).
+   */
+  private isReferenceMatch(
+    normalizedRefA: string,
+    normalizedRefB: string,
+  ): boolean {
+    if (!normalizedRefA || !normalizedRefB) return false;
+
+    // endsWith match
+    const endsWithMatch =
+      normalizedRefA.endsWith(normalizedRefB) ||
+      normalizedRefB.endsWith(normalizedRefA);
+
+    // contains match (shorter ref must be at least 4 chars)
+    const containsMatch =
+      normalizedRefA.includes(normalizedRefB) ||
+      normalizedRefB.includes(normalizedRefA);
+
+    const minLengthForContains = 4;
+    const shorterRef =
+      normalizedRefA.length <= normalizedRefB.length
+        ? normalizedRefA
+        : normalizedRefB;
+    const longerRef =
+      normalizedRefA.length > normalizedRefB.length
+        ? normalizedRefA
+        : normalizedRefB;
+
+    return (
+      endsWithMatch ||
+      (containsMatch &&
+        shorterRef.length >= minLengthForContains &&
+        longerRef.includes(shorterRef))
+    );
+  }
+
   private async getOrCreateCustomer(
     manager: EntityManager,
     data: any,
@@ -1365,13 +1544,15 @@ export class PurchasesService {
     id: string,
     name?: string,
   ): Promise<PaymentMethod> {
-    let pm = await manager.findOne(PaymentMethod, { where: { externalId: id } });
+    const relations = ['currency'];
+    let pm = await manager.findOne(PaymentMethod, { where: { externalId: id }, relations });
     if (!pm && this.isUUID(id)) {
-      pm = await manager.findOne(PaymentMethod, { where: { uid: id } });
+      pm = await manager.findOne(PaymentMethod, { where: { uid: id }, relations });
     }
     if (!pm && name) {
       pm = await manager.findOne(PaymentMethod, {
         where: { name: ILike(name) },
+        relations,
       });
     }
     if (!pm) {
