@@ -47,12 +47,14 @@ import { AuditWebhookDto } from './dto/audit-webhook.dto';
 import { ConfigService } from '@nestjs/config';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
 import { RaffleOrdersSummaryResponseDto } from './dto/purchases-summary.dto';
+import { PurchasesCron } from './purchases.cron';
 
 @ApiTags('Purchases')
 @Controller('purchases')
 export class PurchasesController {
   constructor(
     private readonly purchasesService: PurchasesService,
+    private readonly purchasesCron: PurchasesCron,
     private readonly configService: ConfigService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
@@ -249,6 +251,24 @@ export class PurchasesController {
     });
 
     res.send(buffer);
+  }
+
+  @Post('sheets/rebuild')
+  @Auth([AdminRole.SUPER_ADMIN])
+  @ApiOperation({
+    summary: 'Reconstruir Google Sheets de compras desde la base de datos',
+    description:
+      'Limpia los datos de las pestañas y vuelve a escribir todas las órdenes con la nueva columna UID. Uso recomendado: una sola vez en migración o cuando se necesite resync completo.',
+  })
+  @ApiBearerAuth('JWT-auth')
+  @ApiResponse({
+    status: 201,
+    description: 'Reconstrucción de sheets ejecutada exitosamente',
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Solo Super Admin' })
+  rebuildSheets() {
+    return this.purchasesCron.rebuildPurchasesSheets();
   }
 
   @Get(':uid')

@@ -349,6 +349,7 @@ export class PurchasesService {
 
       if (existingWithRef) {
         purchase.status = PurchaseStatus.DUPLICATED;
+        purchase.exportedToSheets = false;
         const saved = await manager.save(Purchase, purchase);
         this.emitStatusChange(
           saved,
@@ -464,12 +465,14 @@ export class PurchasesService {
 
       // If transition to VERIFIED -> assign tickets if needed
       if (purchase.status === PurchaseStatus.VERIFIED && !wasVerified) {
+        purchase.exportedToSheets = false;
         const saved = await manager.save(Purchase, purchase);
         this.emitStatusChange(saved, 'verified', 'AI validation passed');
         await this.assignTickets(manager, saved);
         return this.serializePurchase(saved);
       }
 
+      purchase.exportedToSheets = false;
       const updatedPurchase = await manager.save(Purchase, purchase);
       return this.serializePurchase(updatedPurchase);
     });
@@ -504,6 +507,7 @@ export class PurchasesService {
       }
 
       purchase.status = status;
+      purchase.exportedToSheets = false;
 
       if (status === PurchaseStatus.VERIFIED) {
         purchase.verifiedAt = new Date();
@@ -536,6 +540,7 @@ export class PurchasesService {
     if (!purchase) throw new NotFoundException('Purchase not found');
 
     purchase.auditReviewedAt = new Date();
+    purchase.exportedToSheets = false;
     if (!purchase.verifiedByAdmin) {
       purchase.verifiedByAdmin = { uid: adminId } as any;
     }
@@ -694,6 +699,7 @@ export class PurchasesService {
         );
       }
 
+      purchase.exportedToSheets = false;
       await manager.save(Purchase, purchase);
     });
 
@@ -1682,6 +1688,7 @@ export class PurchasesService {
     reason: string,
   ) {
     purchase.status = PurchaseStatus.MANUAL_REVIEW;
+    purchase.exportedToSheets = false;
     const saved = await manager.save(Purchase, purchase);
     this.emitStatusChange(saved, 'manual_review', reason);
     return this.serializePurchase(saved);
