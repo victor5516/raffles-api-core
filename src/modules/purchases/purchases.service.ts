@@ -112,6 +112,14 @@ export class PurchasesService {
         manager,
         createDto.customer,
       );
+
+      // ── Blacklist Guard ──
+      if (customer.isBlacklisted) {
+        throw new ForbiddenException(
+          'Este cliente se encuentra bloqueado y no puede realizar compras.',
+        );
+      }
+
       const screenshotKey = await this.uploadPaymentScreenshot(
         file,
         createDto.raffleId,
@@ -202,6 +210,13 @@ export class PurchasesService {
         email: webhook.email,
         phone: webhook.phone,
       });
+
+      // ── Blacklist Guard ──
+      if (customer.isBlacklisted) {
+        throw new ForbiddenException(
+          'Este cliente se encuentra bloqueado y no puede realizar compras.',
+        );
+      }
 
       let screenshotKey = webhook.payment_screenshot;
       if (file) {

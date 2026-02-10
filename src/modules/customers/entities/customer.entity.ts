@@ -27,6 +27,15 @@ export class Customer {
   @Column({ type: 'jsonb', nullable: true })
   location: Record<string, any>;
 
+  @Column({ name: 'is_blacklisted', default: false })
+  isBlacklisted: boolean;
+
+  @Column({ name: 'blacklist_reason', nullable: true })
+  blacklistReason: string | null;
+
+  @Column({ name: 'blacklisted_at', type: 'timestamptz', nullable: true })
+  blacklistedAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

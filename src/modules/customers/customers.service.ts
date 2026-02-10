@@ -10,6 +10,7 @@ import { Purchase } from '../purchases/entities/purchase.entity';
 import { Ticket } from '../tickets/entities/ticket.entity';
 import { Raffle } from '../raffles/entities/raffle.entity';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
+import { ToggleBlacklistDto } from './dto/toggle-blacklist.dto';
 import { S3Service } from '../../common/s3/s3.service';
 
 @Injectable()
@@ -30,6 +31,8 @@ export class CustomersService {
     const phone = typeof query.phone === 'string' ? query.phone : undefined;
     const fullName =
       typeof query.fullName === 'string' ? query.fullName : undefined;
+    const isBlacklisted =
+      typeof query.isBlacklisted === 'string' ? query.isBlacklisted : undefined;
 
     const pageRaw = query.page;
     const limitRaw = query.limit;
@@ -63,6 +66,12 @@ export class CustomersService {
     if (fullName) {
       qb.andWhere('customer.fullName ILIKE :fullName', {
         fullName: `%${fullName}%`,
+      });
+    }
+    if (isBlacklisted !== undefined) {
+      const blacklisted = isBlacklisted === 'true';
+      qb.andWhere('customer.isBlacklisted = :isBlacklisted', {
+        isBlacklisted: blacklisted,
       });
     }
 
@@ -266,6 +275,22 @@ export class CustomersService {
     if (updateDto.location !== undefined) {
       customer.location = updateDto.location as Record<string, any>;
     }
+
+    return await this.customerRepository.save(customer);
+  }
+
+  async toggleBlacklist(uid: string, dto: ToggleBlacklistDto) {
+    const customer = await this.customerRepository.findOne({
+      where: { uid },
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    customer.isBlacklisted = dto.isBlacklisted;
+    customer.blacklistReason = dto.isBlacklisted ? (dto.reason ?? null) : null;
+    customer.blacklistedAt = dto.isBlacklisted ? new Date() : null;
 
     return await this.customerRepository.save(customer);
   }
