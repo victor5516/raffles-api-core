@@ -48,6 +48,12 @@ export class Raffle {
   @Column({ type: 'text', array: true, nullable: true, default: [] })
   gallery: string[];
 
+  @Column({ name: 'terms_and_conditions', type: 'text', nullable: true })
+  termsAndConditions: string | null;
+
+  @Column({ name: 'show_progress_bar', default: false })
+  showProgressBar: boolean;
+
   @Column()
   deadline: Date;
 

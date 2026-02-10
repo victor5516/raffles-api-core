@@ -145,6 +145,8 @@ export class RafflesService {
       selectionType: createRaffleDto.selection_type,
       promotionStrategy: createRaffleDto.promotion_strategy ?? null,
       promotionConfig: createRaffleDto.promotion_config ?? null,
+      termsAndConditions: createRaffleDto.terms_and_conditions ?? null,
+      showProgressBar: createRaffleDto.show_progress_bar ?? false,
     });
     const savedRaffle = await this.raffleRepository.save(raffle);
     const currencies = await this.currenciesService.findAll();
@@ -261,6 +263,10 @@ export class RafflesService {
       updateData.promotionStrategy = updateRaffleDto.promotion_strategy;
     if (updateRaffleDto.promotion_config !== undefined)
       updateData.promotionConfig = updateRaffleDto.promotion_config;
+    if (updateRaffleDto.terms_and_conditions !== undefined)
+      updateData.termsAndConditions = updateRaffleDto.terms_and_conditions;
+    if (updateRaffleDto.show_progress_bar !== undefined)
+      updateData.showProgressBar = updateRaffleDto.show_progress_bar;
 
     await this.raffleRepository.update(uid, updateData);
     return this.findOne(uid);

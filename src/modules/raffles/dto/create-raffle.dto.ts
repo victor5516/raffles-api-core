@@ -7,6 +7,7 @@ import {
   IsEnum,
   Min,
   IsObject,
+  IsBoolean,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -143,4 +144,23 @@ export class CreateRaffleDto {
   })
   @IsObject()
   promotion_config?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    description: 'Términos y condiciones de la rifa (texto libre)',
+  })
+  @IsOptional()
+  @IsString()
+  terms_and_conditions?: string;
+
+  @ApiPropertyOptional({
+    description: 'Mostrar barra de progreso en el cliente',
+    example: false,
+  })
+  @IsOptional()
+  @Transform(({ obj }) => {
+    const raw = obj.show_progress_bar;
+    return raw === 'true' || raw === true;
+  })
+  @IsBoolean()
+  show_progress_bar?: boolean;
 }
