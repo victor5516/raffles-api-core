@@ -296,19 +296,29 @@ export class PurchasesService {
   async processAiWebhook(webhook: AiWebhookDto) {
     const { purchaseId, aiResult } = webhook;
 
+    this.logger.log(
+      `[processAiWebhook] Inicio validación purchaseId=${purchaseId} hasAiResult=${Boolean(aiResult)}`,
+    );
+
     return this.dataSource.transaction(async (manager) => {
       const lockedPurchase = await manager.findOne(Purchase, {
         where: { uid: purchaseId },
         lock: { mode: 'pessimistic_write' },
       });
-      if (!lockedPurchase) throw new NotFoundException('Purchase not found');
+      if (!lockedPurchase) {
+        this.logger.warn(`[processAiWebhook] Purchase no encontrado purchaseId=${purchaseId}`);
+        throw new NotFoundException('Purchase not found');
+      }
 
       // Load relations in a separate query to avoid LEFT JOIN + FOR UPDATE conflicts in Postgres.
       const purchase = await manager.findOne(Purchase, {
         where: { uid: purchaseId },
         relations: ['raffle', 'paymentMethod', 'paymentMethod.currency'],
       });
-      if (!purchase) throw new NotFoundException('Purchase not found');
+      if (!purchase) {
+        this.logger.warn(`[processAiWebhook] Purchase no encontrado (relations) purchaseId=${purchaseId}`);
+        throw new NotFoundException('Purchase not found');
+      }
 
       const wasVerified = purchase.status === PurchaseStatus.VERIFIED;
 
@@ -317,6 +327,9 @@ export class PurchasesService {
 
       // Webhooks duplicados/tardíos no deben degradar una compra ya verificada
       if (wasVerified) {
+        this.logger.log(
+          `[processAiWebhook] Compra ya verificada, solo guardando aiResult purchaseId=${purchaseId}`,
+        );
         const saved = await manager.save(Purchase, purchase);
         return this.serializePurchase(saved);
       }
@@ -340,6 +353,9 @@ export class PurchasesService {
       }
 
       if (!aiResult || typeof aiResult !== 'object') {
+        this.logger.warn(
+          `[processAiWebhook] Payload inválido: sin objeto aiResult purchaseId=${purchaseId}`,
+        );
         return this.handleManualReview(
           manager,
           purchase,
@@ -372,11 +388,11 @@ export class PurchasesService {
 
       // Si el OCR dice que NO es un recibo válido (ej: es un formulario o chat)
       if (aiIsValidReceipt === false) {
-        return this.handleManualReview(
-          manager,
-          purchase,
-          `[FRAUDE DETECTADO] Documento inválido: ${aiFraudReason || 'No es un comprobante bancario final'} (${aiDocumentType})`,
+        const reason = `[FRAUDE DETECTADO] Documento inválido: ${aiFraudReason || 'No es un comprobante bancario final'} (${aiDocumentType})`;
+        this.logger.warn(
+          `[processAiWebhook] FASE 1 Fraude detectado purchaseId=${purchaseId} documentType=${aiDocumentType} reason=${aiFraudReason ?? 'N/A'}`,
         );
+        return this.handleManualReview(manager, purchase, reason);
       }
 
       // =================================================================
@@ -384,6 +400,9 @@ export class PurchasesService {
       // =================================================================
 
       if (extractedAmount === null || extractedAmount === undefined || !extractedRef) {
+        this.logger.warn(
+          `[processAiWebhook] FASE 2 Datos insuficientes purchaseId=${purchaseId} amount=${String(extractedAmount)} ref=${String(extractedRef)}`,
+        );
         return this.handleManualReview(
           manager,
           purchase,
@@ -397,6 +416,9 @@ export class PurchasesService {
       const normalizedAiRef = this.normalizeReference(extractedRef);
 
       if (!normalizedAiRef) {
+        this.logger.warn(
+          `[processAiWebhook] FASE 3 Referencia vacía tras normalización purchaseId=${purchaseId} extractedRef=${String(extractedRef)}`,
+        );
         return this.handleManualReview(manager, purchase, 'IA: Referencia vacía tras normalización');
       }
 
@@ -421,7 +443,11 @@ export class PurchasesService {
         .getOne();
 
       if (existingWithRef) {
+        this.logger.log(
+          `[processAiWebhook] FASE 3 Referencia duplicada purchaseId=${purchaseId} duplicatePurchaseId=${existingWithRef.uid} normalizedRef=${normalizedAiRef}`,
+        );
         purchase.status = PurchaseStatus.DUPLICATED;
+        purchase.notes = `Referencia duplicada. Compra duplicada uid: ${existingWithRef.uid}`;
         purchase.exportedToSheets = false;
         const saved = await manager.save(Purchase, purchase);
         this.emitStatusChange(saved, 'duplicated', `Referencia duplicada con compra ${existingWithRef.uid}`);
@@ -455,6 +481,9 @@ export class PurchasesService {
       const legacyRefMatch = normalizedUserRef ? this.isReferenceMatch(normalizedUserRef, normalizedAiRef) : false;
 
       if (matchedPaymentIndex === -1 && !legacyRefMatch) {
+        this.logger.warn(
+          `[processAiWebhook] FASE 4 Referencia no coincide purchaseId=${purchaseId} userRef=${normalizedUserRef ?? 'N/A'} photoRef=${normalizedAiRef}`,
+        );
         return this.handleManualReview(
           manager,
           purchase,
@@ -479,6 +508,9 @@ export class PurchasesService {
       }
 
       if (!isAmountValid) {
+        this.logger.warn(
+          `[processAiWebhook] FASE 5 Monto incorrecto purchaseId=${purchaseId} expected=${targetAmount} extracted=${extractedAmount} matchedPaymentIndex=${matchedPaymentIndex}`,
+        );
         return this.handleManualReview(
           manager,
           purchase,
@@ -529,6 +561,7 @@ export class PurchasesService {
         purchase.verifiedAt = new Date();
         purchase.verificationSource = VerificationSource.AI;
         purchase.verifiedByAdmin = null; // Limpiamos si antes lo vio un admin
+        purchase.notes = null; // Notas limpias al verificar
       } else {
         // Aún falta plata (Abono parcial verificado)
         // Podríamos poner un status PARTIAL_PAYMENT si existiera, o dejar PENDING
@@ -536,6 +569,9 @@ export class PurchasesService {
 
       // Si pasó a VERIFICADO, asignamos tickets
       if (purchase.status === PurchaseStatus.VERIFIED && !wasVerified) {
+        this.logger.log(
+          `[processAiWebhook] FASE 6 Verificado por IA purchaseId=${purchaseId} totalPaid=${purchase.totalPaid} totalAmount=${purchase.totalAmount} asignando tickets`,
+        );
         purchase.exportedToSheets = false;
         const saved = await manager.save(Purchase, purchase);
         this.emitStatusChange(saved, 'verified', 'Verificado por IA exitosamente');
@@ -544,6 +580,9 @@ export class PurchasesService {
       }
 
       // Guardado final (para casos de abono parcial o actualizaciones menores)
+      this.logger.log(
+        `[processAiWebhook] FASE 6 Abono parcial o actualización purchaseId=${purchaseId} status=${purchase.status} totalPaid=${purchase.totalPaid} totalAmount=${purchase.totalAmount}`,
+      );
       purchase.exportedToSheets = false;
       const updatedPurchase = await manager.save(Purchase, purchase);
       return this.serializePurchase(updatedPurchase);
@@ -584,6 +623,7 @@ export class PurchasesService {
         purchase.verifiedAt = new Date();
         purchase.verificationSource = VerificationSource.ADMIN;
         purchase.auditReviewedAt = new Date();
+        purchase.notes = null; // Notas limpias al verificar
         if (adminId) {
           purchase.verifiedByAdmin = { uid: adminId } as any;
         }
@@ -738,6 +778,7 @@ export class PurchasesService {
           }
           purchase.verificationSource = VerificationSource.ADMIN;
           purchase.auditReviewedAt = new Date();
+          purchase.notes = null; // Notas limpias al verificar
           if (adminId) {
             purchase.verifiedByAdmin = { uid: adminId } as any;
           }
@@ -1873,7 +1914,11 @@ export class PurchasesService {
     purchase: Purchase,
     reason: string,
   ) {
+    this.logger.log(
+      `[processAiWebhook] Revisión manual purchaseId=${purchase.uid} reason=${reason}`,
+    );
     purchase.status = PurchaseStatus.MANUAL_REVIEW;
+    purchase.notes = reason;
     purchase.exportedToSheets = false;
     const saved = await manager.save(Purchase, purchase);
     this.emitStatusChange(saved, 'manual_review', reason);
