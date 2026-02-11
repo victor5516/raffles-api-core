@@ -54,7 +54,7 @@ export class PurchasesCron {
     private readonly configService: ConfigService,
   ) {}
 
-  @Cron(CronExpression.EVERY_10_MINUTES)
+  @Cron(CronExpression.EVERY_10_SECONDS)
   async exportPurchasesToSheets(): Promise<void> {
     await this.runExport(false);
   }
@@ -160,6 +160,32 @@ export class PurchasesCron {
 
     for (const p of purchases) {
       const payments = p.payments ?? [];
+
+      // Si la compra está REJECTED o DUPLICATED, limpiamos cualquier fila existente
+      // en el Sheet para ese UID enviando una fila \"vacía\" (values = []).
+      if (
+        p.status === PurchaseStatus.REJECTED ||
+        p.status === PurchaseStatus.DUPLICATED
+      ) {
+        if (payments.length > 0) {
+          for (const pay of payments) {
+            const sheetName = toSheetName(
+              pay.paymentMethodName ?? p.paymentMethod?.name ?? 'Unknown',
+            );
+            const rows = byPaymentMethod.get(sheetName) ?? [];
+            rows.push({ uid: p.uid, values: [] });
+            byPaymentMethod.set(sheetName, rows);
+          }
+        } else {
+          const sheetName = toSheetName(p.paymentMethod?.name ?? 'Unknown');
+          const rows = byPaymentMethod.get(sheetName) ?? [];
+          rows.push({ uid: p.uid, values: [] });
+          byPaymentMethod.set(sheetName, rows);
+        }
+
+        continue;
+      }
+
       const date = new Date(p.submittedAt).toLocaleString('es-VE');
       const customerName = p.customer?.fullName ?? '-';
       const nationalId = p.customer?.nationalId ?? '-';

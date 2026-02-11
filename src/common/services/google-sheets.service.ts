@@ -132,7 +132,25 @@ export class GoogleSheetsService implements OnModuleInit {
     const blankRow = new Array(columnCount).fill('');
 
     for (const [uid, incomingRows] of incomingByUid) {
-      const currentIndexes = [...(existingRowsByUid.get(uid) ?? [])].sort((a, b) => a - b);
+      const currentIndexes = [...(existingRowsByUid.get(uid) ?? [])].sort(
+        (a, b) => a - b,
+      );
+
+      const isClearOp =
+        incomingRows.length === 1 &&
+        (!incomingRows[0].values || incomingRows[0].values.length === 0);
+
+      if (isClearOp) {
+        // Clear all existing rows for this UID by writing blank rows
+        for (const staleIndex of currentIndexes) {
+          updateData.push({
+            range: `${sheetName}!A${staleIndex}:${endColumn}${staleIndex}`,
+            values: [blankRow],
+          });
+        }
+        continue;
+      }
+
       const overlap = Math.min(currentIndexes.length, incomingRows.length);
 
       for (let i = 0; i < overlap; i++) {
