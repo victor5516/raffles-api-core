@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Purchase, PurchaseStatus } from './entities/purchase.entity';
 import { GoogleSheetsService } from '../../common/services/google-sheets.service';
+import { formatDateVenezuela } from '../../common/utils/date.util';
 
 const STATUS_LABELS: Record<string, string> = {
   [PurchaseStatus.PENDING]: 'Pendiente',
@@ -186,7 +187,7 @@ export class PurchasesCron {
         continue;
       }
 
-      const date = new Date(p.submittedAt).toLocaleString('es-VE');
+      const date = formatDateVenezuela(p.submittedAt);
       const customerName = p.customer?.fullName ?? '-';
       const nationalId = p.customer?.nationalId ?? '-';
       const email = p.customer?.email ?? '-';

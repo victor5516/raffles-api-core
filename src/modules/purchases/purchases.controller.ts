@@ -36,6 +36,7 @@ import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { ExportPurchasesDto } from './dto/export-purchases.dto';
+import { ExportReceiptsDto } from './dto/export-receipts.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Auth } from '../auth/decorators/admin-auth.decorator';
@@ -251,6 +252,36 @@ export class PurchasesController {
     });
 
     res.send(buffer);
+  }
+
+  @Post('export/receipts-pdf')
+  @Auth([AdminRole.SUPER_ADMIN])
+  @ApiOperation({ summary: 'Exportar comprobantes (imágenes) a PDF' })
+  @ApiBearerAuth('JWT-auth')
+  @ApiProduces('application/pdf')
+  @ApiResponse({
+    status: 200,
+    description: 'Archivo PDF generado exitosamente',
+    content: {
+      'application/pdf': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  @ApiResponse({
+    status: 404,
+    description: 'No se encontraron compras con comprobantes en ese filtro',
+  })
+  async exportReceiptsPdf(
+    @Body() dto: ExportReceiptsDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.purchasesService.generateReceiptsPdf(dto, res);
   }
 
   @Post('sheets/rebuild')

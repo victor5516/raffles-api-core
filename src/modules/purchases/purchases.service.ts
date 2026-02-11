@@ -7,9 +7,20 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository, ILike, Brackets } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  ILike,
+  Brackets,
+  Between,
+  In,
+} from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as ExcelJS from 'exceljs';
+import PDFDocument from 'pdfkit';
+import axios from 'axios';
+import { Response } from 'express';
 import {
   Purchase,
   PurchaseStatus,
@@ -29,12 +40,14 @@ import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { ExportPurchasesDto } from './dto/export-purchases.dto';
+import { ExportReceiptsDto } from './dto/export-receipts.dto';
 import { S3Service } from '../../common/s3/s3.service';
 import { SqsService } from '../../common/sqs/sqs.service';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
 import { AuditWebhookDto } from './dto/audit-webhook.dto';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 import { calculatePromotionalTotal } from '../raffles/utils/pricing.util';
+import { formatDateVenezuela } from '../../common/utils/date.util';
 import {
   RaffleOrdersSummaryCurrencyDto,
   RaffleOrdersSummaryResponseDto,
@@ -287,62 +300,116 @@ export class PurchasesService {
       const purchase = await manager.findOne(Purchase, {
         where: { uid: purchaseId },
         relations: ['raffle', 'paymentMethod', 'paymentMethod.currency'],
+        lock: { mode: 'pessimistic_write' },
       });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
       const wasVerified = purchase.status === PurchaseStatus.VERIFIED;
 
-      // Save raw AI result for auditing
+      // 1. Guardamos el resultado crudo para auditoría futura
       purchase.aiAnalysisResult = aiResult ?? null;
 
-      interface ReceiptData {
-        amount: number | null;
-        currency: string | null;
-        reference: string | null;
+      // Webhooks duplicados/tardíos no deben degradar una compra ya verificada
+      if (wasVerified) {
+        const saved = await manager.save(Purchase, purchase);
+        return this.serializePurchase(saved);
       }
-      const aiData = aiResult as ReceiptData;
 
-      // --- Validation Phase ---
+      // Definimos la interfaz que coincide con tu OCR Service nuevo
+      interface AiAnalysisResponse {
+        isValidReceipt?: boolean;
+        isGenuineReceipt?: boolean | null;
+        documentType?: string;
+        fraudReason: string | null;
+        confidence?: number;
+        fraudIndicators?: string[] | null;
+        amount?: number | null;
+        reference?: string | null;
+        data?: {
+          amount?: number | null;
+          reference?: string | null;
+          currency?: string | null;
+          date?: string | null;
+        };
+      }
 
-      // A. Basic Integrity Check
-      if (!aiData?.amount || !aiData?.currency || !aiData?.reference) {
+      if (!aiResult || typeof aiResult !== 'object') {
         return this.handleManualReview(
           manager,
           purchase,
-          'Purchase requires manual review (insufficient AI data)',
+          'IA: Payload inválido (sin objeto aiResult)',
         );
       }
 
-      // B. Duplicate Check (Fuzzy Reference Matching) — also searches payments JSONB
-      const normalizedAiRef = this.normalizeReference(aiData.reference);
+      // Normalizamos para soportar payload nuevo (data.*) y legacy (campos flat)
+      const aiData = aiResult as AiAnalysisResponse;
+      const extractedAmount = aiData.data?.amount ?? aiData.amount ?? null;
+      const extractedRef = aiData.data?.reference ?? aiData.reference ?? null;
+      const aiIsValidReceipt =
+        typeof aiData.isValidReceipt === 'boolean'
+          ? aiData.isValidReceipt
+          : aiData.isGenuineReceipt === true
+            ? true
+            : aiData.isGenuineReceipt === false
+              ? false
+              : undefined;
+      const aiFraudReason =
+        aiData.fraudReason ??
+        (Array.isArray(aiData.fraudIndicators) && aiData.fraudIndicators.length > 0
+          ? aiData.fraudIndicators.join(' | ')
+          : null);
+      const aiDocumentType = aiData.documentType ?? 'UNKNOWN';
+
+      // =================================================================
+      // FASE 1: DETECCIÓN DE FRAUDE (Bloqueo Inmediato)
+      // =================================================================
+
+      // Si el OCR dice que NO es un recibo válido (ej: es un formulario o chat)
+      if (aiIsValidReceipt === false) {
+        return this.handleManualReview(
+          manager,
+          purchase,
+          `[FRAUDE DETECTADO] Documento inválido: ${aiFraudReason || 'No es un comprobante bancario final'} (${aiDocumentType})`,
+        );
+      }
+
+      // =================================================================
+      // FASE 2: VALIDACIÓN DE DATOS BÁSICOS
+      // =================================================================
+
+      if (extractedAmount === null || extractedAmount === undefined || !extractedRef) {
+        return this.handleManualReview(
+          manager,
+          purchase,
+          'IA: Datos insuficientes (No se pudo leer monto o referencia)',
+        );
+      }
+
+      // =================================================================
+      // FASE 3: CHEQUEO DE DUPLICADOS (Match Difuso)
+      // =================================================================
+      const normalizedAiRef = this.normalizeReference(extractedRef);
+
       if (!normalizedAiRef) {
-        return this.handleManualReview(
-          manager,
-          purchase,
-          'Purchase requires manual review (empty normalized reference)',
-        );
+        return this.handleManualReview(manager, purchase, 'IA: Referencia vacía tras normalización');
       }
+
+      // Buscamos si esta referencia YA EXISTE en otra compra (evitar doble canje)
       const existingWithRef = await manager
         .getRepository(Purchase)
         .createQueryBuilder('p')
-        .where('p.uid != :uid', { uid: purchaseId })
+        .where('p.uid != :uid', { uid: purchaseId }) // Excluir la compra actual
         .andWhere(
           new Brackets((qb) => {
-            qb.where(
-              "REGEXP_REPLACE(UPPER(p.bank_reference), '[^A-Z0-9]', '', 'g') = :ref",
-              { ref: normalizedAiRef },
-            )
-              .orWhere(
-                "p.ai_analysis_result->>'reference' IS NOT NULL AND p.ai_analysis_result->>'reference' != '' AND REGEXP_REPLACE(UPPER(p.ai_analysis_result->>'reference'), '[^A-Z0-9]', '', 'g') = :ref",
-                { ref: normalizedAiRef },
-              )
-              .orWhere(
-                `EXISTS (
+            // A. Coincidencia en la referencia principal (Legacy)
+            qb.where("REGEXP_REPLACE(UPPER(p.bank_reference), '[^A-Z0-9]', '', 'g') = :ref", { ref: normalizedAiRef })
+            // B. Coincidencia en el resultado de IA previo
+              .orWhere("p.ai_analysis_result->'data'->>'reference' IS NOT NULL AND REGEXP_REPLACE(UPPER(p.ai_analysis_result->'data'->>'reference'), '[^A-Z0-9]', '', 'g') = :ref", { ref: normalizedAiRef })
+            // C. Coincidencia dentro del array de pagos (Abonos)
+              .orWhere(`EXISTS (
                   SELECT 1 FROM jsonb_array_elements(p.payments) AS elem
                   WHERE REGEXP_REPLACE(UPPER(elem->>'reference'), '[^A-Z0-9]', '', 'g') = :ref
-                )`,
-                { ref: normalizedAiRef },
-              );
+                )`, { ref: normalizedAiRef });
           }),
         )
         .getOne();
@@ -351,23 +418,25 @@ export class PurchasesService {
         purchase.status = PurchaseStatus.DUPLICATED;
         purchase.exportedToSheets = false;
         const saved = await manager.save(Purchase, purchase);
-        this.emitStatusChange(
-          saved,
-          'duplicated',
-          'Purchase marked as duplicated',
-        );
+        this.emitStatusChange(saved, 'duplicated', `Referencia duplicada con compra ${existingWithRef.uid}`);
         return this.serializePurchase(saved);
       }
 
-      // C. Find matching payment entry in payments[] array
+      // =================================================================
+      // FASE 4: VINCULACIÓN CON EL PAGO (Abonos)
+      // =================================================================
+
       const paymentsArray: PaymentEntry[] = purchase.payments ?? [];
       let matchedPaymentIndex = -1;
 
+      // Buscamos a cuál de los pagos reportados por el usuario corresponde esta foto
       if (paymentsArray.length > 0) {
         for (let i = 0; i < paymentsArray.length; i++) {
           const entry = paymentsArray[i];
-          if (entry.verified) continue; // Skip already verified entries
+          if (entry.verified) continue; // Saltamos los que ya están listos
+
           const normalizedEntryRef = this.normalizeReference(entry.reference);
+          // Usamos coincidencia difusa (ej: termina en...)
           if (normalizedEntryRef && this.isReferenceMatch(normalizedEntryRef, normalizedAiRef)) {
             matchedPaymentIndex = i;
             break;
@@ -375,109 +444,105 @@ export class PurchasesService {
         }
       }
 
-      // D. Fallback to legacy bankReference if no match in payments[]
+      // Si no encontramos match en el array, probamos con la referencia legacy
       const normalizedUserRef = this.normalizeReference(purchase.bankReference);
-      const legacyRefMatch = normalizedUserRef
-        ? this.isReferenceMatch(normalizedUserRef, normalizedAiRef)
-        : false;
+      const legacyRefMatch = normalizedUserRef ? this.isReferenceMatch(normalizedUserRef, normalizedAiRef) : false;
 
       if (matchedPaymentIndex === -1 && !legacyRefMatch) {
-        this.logger.warn(
-          `AI Validation Failed for purchase ${purchaseId}: ` +
-          `No matching reference found in payments[] or bankReference. ` +
-          `AI ref="${normalizedAiRef}", bankRef="${normalizedUserRef}", ` +
-          `payments refs=[${paymentsArray.map((p) => this.normalizeReference(p.reference)).join(', ')}]`,
-        );
         return this.handleManualReview(
           manager,
           purchase,
-          'AI Validation Failed: No matching reference found',
+          `IA: Referencia no coincide. Usuario dijo: "${normalizedUserRef || 'N/A'}", Foto dice: "${normalizedAiRef}"`
         );
       }
 
-      // E. Amount Check against the matched payment entry (or totalAmount for legacy)
+      // =================================================================
+      // FASE 5: VALIDACIÓN DE MONTO
+      // =================================================================
       let isAmountValid: boolean;
+      let targetAmount = 0;
+
       if (matchedPaymentIndex >= 0) {
-        const matchedEntry = paymentsArray[matchedPaymentIndex];
-        const amountDiff = Math.abs(matchedEntry.amount - aiData.amount);
-        isAmountValid = amountDiff < 0.01;
+        // Validamos contra el abono específico
+        targetAmount = Number(paymentsArray[matchedPaymentIndex].amount);
+        isAmountValid = Math.abs(targetAmount - extractedAmount) < 1.00; // Tolerancia de 1.00 por decimales
       } else {
-        // Legacy: compare against totalAmount
-        const amountDiff = Math.abs(purchase.totalAmount - aiData.amount);
-        isAmountValid = amountDiff < 0.01;
+        // Legacy: Validamos contra el total
+        targetAmount = Number(purchase.totalAmount);
+        isAmountValid = Math.abs(targetAmount - extractedAmount) < 1.00;
       }
-
-      const expectedCurrency = purchase.paymentMethod?.currency;
-
-      // Log para depuración
-      this.logger.debug(
-        `Reference validation for purchase ${purchaseId}: ` +
-        `matchedPaymentIndex=${matchedPaymentIndex}, ` +
-        `AiRef="${aiData.reference}" -> Normalized="${normalizedAiRef}", ` +
-        `Amount valid=${isAmountValid}, ` +
-        `Currency: ${expectedCurrency?.symbol} vs ${aiData.currency}`,
-      );
 
       if (!isAmountValid) {
-        this.logger.warn(
-          `AI Validation Failed for purchase ${purchaseId}: Amount mismatch. ` +
-          `AI amount=${aiData.amount}`,
-        );
         return this.handleManualReview(
           manager,
           purchase,
-          `AI Validation Failed: Amount mismatch`,
+          `IA: Monto incorrecto. Esperado: ${targetAmount}, Foto dice: ${extractedAmount}`
         );
       }
 
-      // --- Update Phase ---
+      // =================================================================
+      // FASE 6: APROBACIÓN Y ACTUALIZACIÓN
+      // =================================================================
 
-      // Mark the matched payment entry as verified
+      // Actualizamos el array de pagos
       if (matchedPaymentIndex >= 0) {
         paymentsArray[matchedPaymentIndex].verified = true;
-        paymentsArray[matchedPaymentIndex].aiResult = aiResult;
-        purchase.payments = [...paymentsArray]; // Trigger JSONB update
-      } else if (paymentsArray.length > 0) {
-        // Legacy fallback: mark the first unverified entry
-        const firstUnverified = paymentsArray.findIndex((p) => !p.verified);
-        if (firstUnverified >= 0) {
-          paymentsArray[firstUnverified].verified = true;
-          paymentsArray[firstUnverified].aiResult = aiResult;
+        paymentsArray[matchedPaymentIndex].aiResult = aiResult; // Guardamos evidencia en el item
+        purchase.payments = [...paymentsArray]; // Forzamos update de TypeORM
+      } else {
+        // Fallback legacy: si no hay array, creamos un registro mínimo verificable
+        if (paymentsArray.length > 0) {
+          paymentsArray[0].verified = true;
+          paymentsArray[0].aiResult = aiResult;
           purchase.payments = [...paymentsArray];
+        } else {
+          const inferredPayment: PaymentEntry = {
+            amount: Number(purchase.totalAmount),
+            reference: purchase.bankReference || extractedRef,
+            currency: purchase.paymentMethod?.currency?.symbol ?? '',
+            evidenceUrl: purchase.paymentScreenshotUrl ?? '',
+            verified: true,
+            aiResult,
+            paymentMethodId: purchase.paymentMethodId,
+            paymentMethodName: purchase.paymentMethod?.name,
+          };
+          purchase.payments = [inferredPayment];
         }
       }
 
-      // Recalculate totalPaid from verified payments
+      // Recalcular Total Pagado Real
       const newTotalPaid = (purchase.payments ?? [])
         .filter((p) => p.verified)
         .reduce((sum, p) => sum + Number(p.amount), 0);
+
       purchase.totalPaid = Number(newTotalPaid.toFixed(2));
 
-      // Determine final status
+      // ¿Ya pagó todo?
       if (purchase.totalPaid >= Number(purchase.totalAmount)) {
         purchase.status = PurchaseStatus.VERIFIED;
         purchase.verifiedAt = new Date();
         purchase.verificationSource = VerificationSource.AI;
-        purchase.verifiedByAdmin = null;
-        purchase.auditReviewedAt = null;
+        purchase.verifiedByAdmin = null; // Limpiamos si antes lo vio un admin
+      } else {
+        // Aún falta plata (Abono parcial verificado)
+        // Podríamos poner un status PARTIAL_PAYMENT si existiera, o dejar PENDING
       }
-      // If totalPaid < totalAmount, keep current status (PENDING) — partial payment
 
-      // If transition to VERIFIED -> assign tickets if needed
+      // Si pasó a VERIFICADO, asignamos tickets
       if (purchase.status === PurchaseStatus.VERIFIED && !wasVerified) {
         purchase.exportedToSheets = false;
         const saved = await manager.save(Purchase, purchase);
-        this.emitStatusChange(saved, 'verified', 'AI validation passed');
+        this.emitStatusChange(saved, 'verified', 'Verificado por IA exitosamente');
         await this.assignTickets(manager, saved);
         return this.serializePurchase(saved);
       }
 
+      // Guardado final (para casos de abono parcial o actualizaciones menores)
       purchase.exportedToSheets = false;
       const updatedPurchase = await manager.save(Purchase, purchase);
       return this.serializePurchase(updatedPurchase);
     });
-  }
-
+}
   /**
    * Manual Status Update by Admin.
    * Triggers ticket assignment if status changes to VERIFIED.
@@ -1068,6 +1133,121 @@ export class PurchasesService {
     return { key, url: url || key };
   }
 
+  async generateReceiptsPdf(
+    dto: ExportReceiptsDto,
+    res: Response,
+  ): Promise<void> {
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
+
+    const purchases = await this.purchaseRepository.find({
+      where: {
+        paymentMethodId: dto.paymentMethodId,
+        submittedAt: Between(startDate, endDate),
+        status: In([
+          PurchaseStatus.VERIFIED,
+          PurchaseStatus.PENDING,
+          PurchaseStatus.MANUAL_REVIEW,
+        ]),
+      },
+      relations: ['customer', 'paymentMethod'],
+      order: { submittedAt: 'ASC' },
+    });
+
+    const purchasesWithEvidence = purchases.filter((purchase) => {
+      const hasLegacyEvidence = Boolean(
+        purchase.paymentScreenshotUrl && purchase.paymentScreenshotUrl.trim(),
+      );
+      const hasPaymentsEvidence = (purchase.payments ?? []).some((entry) =>
+        Boolean(entry.evidenceUrl && entry.evidenceUrl.trim()),
+      );
+      return hasLegacyEvidence || hasPaymentsEvidence;
+    });
+
+    if (!purchasesWithEvidence.length) {
+      throw new NotFoundException(
+        'No purchases with evidence found for the selected filters',
+      );
+    }
+
+    const fileStart = startDate.toISOString().slice(0, 10);
+    const fileEnd = endDate.toISOString().slice(0, 10);
+    const filename = `receipts-${dto.paymentMethodId}-${fileStart}-${fileEnd}.pdf`;
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+
+    const doc = new PDFDocument({
+      margin: 50,
+      size: 'A4',
+    });
+    doc.pipe(res);
+
+    for (let index = 0; index < purchasesWithEvidence.length; index++) {
+      const purchase = purchasesWithEvidence[index];
+      if (index > 0) {
+        doc.addPage();
+      }
+
+      const evidenceKey =
+        (purchase.payments ?? []).find((entry) => entry.evidenceUrl?.trim())
+          ?.evidenceUrl ??
+        purchase.paymentScreenshotUrl;
+      const evidenceUrl = this.s3Service.getCdnUrl(evidenceKey) ?? evidenceKey;
+
+      doc
+        .fontSize(16)
+        .text(`Comprobante ${index + 1}`, { underline: true })
+        .moveDown(0.7);
+      doc
+        .fontSize(11)
+        .fillColor('black')
+        .text(`Fecha: ${formatDateVenezuela(purchase.submittedAt)}`)
+        .text(`Cliente: ${purchase.customer?.fullName || '-'}`)
+        .text(`Cédula: ${purchase.customer?.nationalId || '-'}`)
+        .text(`Referencia: ${purchase.bankReference || '-'}`)
+        .text(`Monto: ${Number(purchase.totalAmount || 0).toFixed(2)}`)
+        .moveDown();
+
+      if (!evidenceUrl) {
+        doc
+          .fillColor('red')
+          .fontSize(12)
+          .text('Error cargando imagen: evidencia no disponible')
+          .fillColor('black');
+        continue;
+      }
+
+      try {
+        const response = await axios.get<ArrayBuffer>(evidenceUrl, {
+          responseType: 'arraybuffer',
+          timeout: 15000,
+        });
+        const imageBuffer = Buffer.from(response.data);
+        doc.image(imageBuffer, {
+          fit: [500, 500],
+          align: 'center',
+          valign: 'center',
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to load evidence image for purchase ${purchase.uid}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        doc
+          .fillColor('red')
+          .fontSize(12)
+          .text('Error cargando imagen')
+          .fillColor('black');
+      }
+    }
+
+    doc.end();
+  }
+
   async exportPurchases(filters: ExportPurchasesDto): Promise<Buffer> {
     const {
       raffleId,
@@ -1219,7 +1399,7 @@ export class PurchasesService {
       pmPurchases.forEach((p) => {
         const isDuplicated = p.status === PurchaseStatus.DUPLICATED;
         worksheet.addRow({
-          date: new Date(p.submittedAt).toLocaleString('es-VE'),
+          date: formatDateVenezuela(p.submittedAt),
           customer: p.customer?.fullName || '-',
           nationalId: p.customer?.nationalId || '-',
           email: p.customer?.email || '-',
