@@ -297,10 +297,16 @@ export class PurchasesService {
     const { purchaseId, aiResult } = webhook;
 
     return this.dataSource.transaction(async (manager) => {
+      const lockedPurchase = await manager.findOne(Purchase, {
+        where: { uid: purchaseId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!lockedPurchase) throw new NotFoundException('Purchase not found');
+
+      // Load relations in a separate query to avoid LEFT JOIN + FOR UPDATE conflicts in Postgres.
       const purchase = await manager.findOne(Purchase, {
         where: { uid: purchaseId },
         relations: ['raffle', 'paymentMethod', 'paymentMethod.currency'],
-        lock: { mode: 'pessimistic_write' },
       });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
