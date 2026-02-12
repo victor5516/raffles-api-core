@@ -12,6 +12,7 @@ import { Raffle } from '../raffles/entities/raffle.entity';
 import { PaymentMethod } from '../payments/entities/payment-method.entity';
 import { Currency } from '../currencies/entities/currency.entity';
 import { GoogleSheetsService } from '../../common/services/google-sheets.service';
+import { TicketAllocationService } from './services/ticket-allocation.service';
 // import { MailModule } from '../mail/mail.module';
 // import { PurchasesMailListener } from './listeners/purchases-mail.listener';
 
@@ -27,6 +28,7 @@ import { GoogleSheetsService } from '../../common/services/google-sheets.service
     PurchaseVerificationService,
     GoogleSheetsService,
     PurchasesCron,
+    TicketAllocationService,
   ], // PurchasesMailListener removido: SES no funciona
   exports: [PurchasesService, PurchasesExportService],
 })
