@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PurchasesService } from './purchases.service';
 import { PurchasesExportService } from './services/purchases-export.service';
+import { PurchaseVerificationService } from './services/purchase-verification.service';
 import { PurchasesController } from './purchases.controller';
 import { PurchasesCron } from './purchases.cron';
 import { Purchase } from './entities/purchase.entity';
@@ -20,7 +21,13 @@ import { GoogleSheetsService } from '../../common/services/google-sheets.service
     // MailModule, // Deshabilitado: SES no funciona
   ],
   controllers: [PurchasesController],
-  providers: [PurchasesService, PurchasesExportService, GoogleSheetsService, PurchasesCron], // PurchasesMailListener removido: SES no funciona
+  providers: [
+    PurchasesService,
+    PurchasesExportService,
+    PurchaseVerificationService,
+    GoogleSheetsService,
+    PurchasesCron,
+  ], // PurchasesMailListener removido: SES no funciona
   exports: [PurchasesService, PurchasesExportService],
 })
 export class PurchasesModule {}
