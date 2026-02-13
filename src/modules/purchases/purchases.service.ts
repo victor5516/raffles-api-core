@@ -439,6 +439,7 @@ export class PurchasesService {
           throw new NotFoundException('Payment method not found');
         }
         purchase.paymentMethodId = effectiveDto.paymentMethodId;
+        purchase.paymentMethod = paymentMethod;
       }
 
       if (effectiveDto.customer !== undefined) {

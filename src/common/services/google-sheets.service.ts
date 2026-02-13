@@ -44,13 +44,50 @@ export class GoogleSheetsService implements OnModuleInit {
       return;
     }
 
-    const range = `${sheetName}!A:A`;
+    const range = this.rangeRef(sheetName, 'A:A');
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range,
       valueInputOption: 'USER_ENTERED',
       requestBody: { values },
     });
+  }
+
+  /**
+   * Ensures a sheet (tab) with the given name exists in the spreadsheet.
+   * Creates it via the API if missing.
+   */
+  async ensureSheetExists(
+    spreadsheetId: string,
+    sheetName: string,
+  ): Promise<void> {
+    const sheets = this.getClient();
+    const res = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(title))',
+    });
+    const existing = (res.data.sheets ?? []).some(
+      (s) => (s.properties?.title ?? '').trim() === sheetName.trim(),
+    );
+    if (existing) {
+      return;
+    }
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: sheetName.trim().slice(0, 100),
+                gridProperties: { rowCount: 1000, columnCount: 26 },
+              },
+            },
+          },
+        ],
+      },
+    });
+    this.logger.log(`Created sheet "${sheetName}" in spreadsheet ${spreadsheetId}`);
   }
 
   async getSheetValues(
@@ -61,7 +98,7 @@ export class GoogleSheetsService implements OnModuleInit {
     const sheets = this.getClient();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${sheetName}!${range}`,
+      range: this.rangeRef(sheetName, range),
     });
     return response.data.values ?? [];
   }
@@ -77,6 +114,8 @@ export class GoogleSheetsService implements OnModuleInit {
       return;
     }
 
+    await this.ensureSheetExists(spreadsheetId, sheetName);
+
     const maxRowLength = rows.reduce(
       (max, row) => Math.max(max, row.values.length),
       headers?.length ?? 0,
@@ -91,7 +130,7 @@ export class GoogleSheetsService implements OnModuleInit {
       const headerRange = `A1:${this.columnLetterFromIndex(headers.length)}1`;
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${sheetName}!${headerRange}`,
+        range: this.rangeRef(sheetName, headerRange),
         valueInputOption: 'USER_ENTERED',
         requestBody: { values: [headers] },
       });
@@ -144,7 +183,7 @@ export class GoogleSheetsService implements OnModuleInit {
         // Clear all existing rows for this UID by writing blank rows
         for (const staleIndex of currentIndexes) {
           updateData.push({
-            range: `${sheetName}!A${staleIndex}:${endColumn}${staleIndex}`,
+            range: this.rangeRef(sheetName, `A${staleIndex}:${endColumn}${staleIndex}`),
             values: [blankRow],
           });
         }
@@ -157,7 +196,7 @@ export class GoogleSheetsService implements OnModuleInit {
         const rowIndex = currentIndexes[i];
         const values = incomingRows[i].values;
         updateData.push({
-          range: `${sheetName}!A${rowIndex}:${endColumn}${rowIndex}`,
+          range: this.rangeRef(sheetName, `A${rowIndex}:${endColumn}${rowIndex}`),
           values: [values],
         });
       }
@@ -169,7 +208,7 @@ export class GoogleSheetsService implements OnModuleInit {
         const staleIndexes = currentIndexes.slice(incomingRows.length);
         for (const staleIndex of staleIndexes) {
           updateData.push({
-            range: `${sheetName}!A${staleIndex}:${endColumn}${staleIndex}`,
+            range: this.rangeRef(sheetName, `A${staleIndex}:${endColumn}${staleIndex}`),
             values: [blankRow],
           });
         }
@@ -198,14 +237,15 @@ export class GoogleSheetsService implements OnModuleInit {
     rows: any[][],
   ): Promise<void> {
     const sheets = this.getClient();
+    await this.ensureSheetExists(spreadsheetId, sheetName);
     await sheets.spreadsheets.values.clear({
       spreadsheetId,
-      range: `${sheetName}!A:ZZ`,
+      range: this.rangeRef(sheetName, 'A:ZZ'),
     });
 
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${sheetName}!A1`,
+      range: this.rangeRef(sheetName, 'A1'),
       valueInputOption: 'USER_ENTERED',
       requestBody: {
         values: [headers, ...rows],
@@ -218,6 +258,19 @@ export class GoogleSheetsService implements OnModuleInit {
       throw new Error('Google Sheets client not initialized');
     }
     return this.sheets;
+  }
+
+  /**
+   * Escapes sheet name for A1 notation (spaces/special chars require single quotes).
+   * Single quotes inside the name are escaped by doubling.
+   */
+  private toSheetRangeName(sheetName: string): string {
+    const escaped = String(sheetName ?? '').replace(/'/g, "''");
+    return `'${escaped}'`;
+  }
+
+  private rangeRef(sheetName: string, a1Part: string): string {
+    return `${this.toSheetRangeName(sheetName)}!${a1Part}`;
   }
 
   private isHeaderRow(row: any[] | undefined, headers: string[]): boolean {
