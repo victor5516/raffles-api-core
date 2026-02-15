@@ -1,10 +1,5 @@
 import { Controller, Get, Query, BadRequestException } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiQuery,
-  ApiResponse,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { TicketsService } from './tickets.service';
 
 @ApiTags('Tickets')

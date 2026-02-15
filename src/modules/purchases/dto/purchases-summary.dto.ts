@@ -52,4 +52,3 @@ export class RaffleOrdersSummaryResponseDto {
   })
   totals: RaffleOrdersSummaryTotalsDto;
 }
-

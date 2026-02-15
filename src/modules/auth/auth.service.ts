@@ -1,4 +1,9 @@
-import { Injectable, UnauthorizedException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -42,7 +47,7 @@ export class AuthService {
 
   async logout(token: string): Promise<void> {
     const tokenHash = this.hashToken(token);
-    const decoded = this.jwtService.decode(token) as { exp?: number };
+    const decoded = this.jwtService.decode(token);
     const expiresAt = decoded?.exp
       ? new Date(decoded.exp * 1000)
       : new Date(Date.now() + 24 * 60 * 60 * 1000); // Default 1 day if no exp
@@ -63,11 +68,15 @@ export class AuthService {
     return !!revoked;
   }
 
-  async createAdmin(createAdminDto: CreateAdminDto): Promise<Omit<Admin, 'passwordHash' | 'fullName'> & { full_name: string }> {
+  async createAdmin(
+    createAdminDto: CreateAdminDto,
+  ): Promise<Omit<Admin, 'passwordHash' | 'fullName'> & { full_name: string }> {
     const { email, password, fullName, role } = createAdminDto;
 
     // Check if admin with this email already exists
-    const existingAdmin = await this.adminRepository.findOne({ where: { email } });
+    const existingAdmin = await this.adminRepository.findOne({
+      where: { email },
+    });
     if (existingAdmin) {
       throw new ConflictException('An admin with this email already exists');
     }
@@ -93,7 +102,9 @@ export class AuthService {
     };
   }
 
-  async findAll(): Promise<Array<Omit<Admin, 'passwordHash' | 'fullName'> & { full_name: string }>> {
+  async findAll(): Promise<
+    Array<Omit<Admin, 'passwordHash' | 'fullName'> & { full_name: string }>
+  > {
     const admins = await this.adminRepository.find({
       order: { createdAt: 'DESC' },
     });
@@ -107,7 +118,9 @@ export class AuthService {
     });
   }
 
-  async findOne(uid: string): Promise<Omit<Admin, 'passwordHash' | 'fullName'> & { full_name: string }> {
+  async findOne(
+    uid: string,
+  ): Promise<Omit<Admin, 'passwordHash' | 'fullName'> & { full_name: string }> {
     const admin = await this.adminRepository.findOne({ where: { uid } });
 
     if (!admin) {
@@ -121,7 +134,10 @@ export class AuthService {
     };
   }
 
-  async update(uid: string, updateAdminDto: UpdateAdminDto): Promise<Omit<Admin, 'passwordHash' | 'fullName'> & { full_name: string }> {
+  async update(
+    uid: string,
+    updateAdminDto: UpdateAdminDto,
+  ): Promise<Omit<Admin, 'passwordHash' | 'fullName'> & { full_name: string }> {
     const admin = await this.adminRepository.findOne({ where: { uid } });
 
     if (!admin) {

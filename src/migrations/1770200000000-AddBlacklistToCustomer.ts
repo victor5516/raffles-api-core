@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
 
-export class AddBlacklistToCustomer1770200000000
-  implements MigrationInterface
-{
+export class AddBlacklistToCustomer1770200000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.addColumn(
       'customer',

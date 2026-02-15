@@ -89,8 +89,7 @@ export class PaymentMethodsService {
       return {
         ...rest,
         currency: currency?.symbol || null,
-        imageUrl:
-          this.s3Service.getCdnUrl(pm.imageUrl) ?? pm.imageUrl,
+        imageUrl: this.s3Service.getCdnUrl(pm.imageUrl) ?? pm.imageUrl,
       };
     });
   }
@@ -158,17 +157,21 @@ export class PaymentMethodsService {
 
     const updateEntityLike: Partial<PaymentMethod> = {};
     if (updateDto.name) updateEntityLike.name = updateDto.name;
-    if(updateDto.accountHolderName) updateEntityLike.accountHolderName = updateDto.accountHolderName;
+    if (updateDto.accountHolderName)
+      updateEntityLike.accountHolderName = updateDto.accountHolderName;
     if (imageKey) updateEntityLike.imageUrl = imageKey;
     if (updateDto.payment_data)
       updateEntityLike.paymentData = updateDto.payment_data as unknown;
     if (updateDto.minimum_payment_amount)
       updateEntityLike.minimumPaymentAmount = updateDto.minimum_payment_amount;
-    if (updateDto.currency_id) updateEntityLike.currencyId = updateDto.currency_id;
-    if (updateDto.accountHolderName) updateEntityLike.accountHolderName = updateDto.accountHolderName;
+    if (updateDto.currency_id)
+      updateEntityLike.currencyId = updateDto.currency_id;
+    if (updateDto.accountHolderName)
+      updateEntityLike.accountHolderName = updateDto.accountHolderName;
     if (updateDto.order !== undefined) updateEntityLike.order = updateDto.order;
     if (updateDto.ai_verification_enabled !== undefined)
-      updateEntityLike.aiVerificationEnabled = updateDto.ai_verification_enabled;
+      updateEntityLike.aiVerificationEnabled =
+        updateDto.ai_verification_enabled;
     return this.update(uid, updateEntityLike);
   }
 

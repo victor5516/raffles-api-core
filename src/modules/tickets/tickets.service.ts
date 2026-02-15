@@ -1,7 +1,10 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { Purchase, PurchaseStatus } from '../purchases/entities/purchase.entity';
+import {
+  Purchase,
+  PurchaseStatus,
+} from '../purchases/entities/purchase.entity';
 import { Raffle, RaffleStatus } from '../raffles/entities/raffle.entity';
 import { S3Service } from '../../common/s3/s3.service';
 
@@ -117,15 +120,18 @@ export class TicketsService {
     }
 
     // Group purchases by raffle; each raffle has an array of purchases with their ticket numbers
-    const raffleMap = new Map<string, {
-      raffle: any;
-      purchases: Array<{
-        purchaseUid: string;
-        ticketNumbers: number[];
-        status: PurchaseStatus;
-        purchaseDate: Date;
-      }>;
-    }>();
+    const raffleMap = new Map<
+      string,
+      {
+        raffle: any;
+        purchases: Array<{
+          purchaseUid: string;
+          ticketNumbers: number[];
+          status: PurchaseStatus;
+          purchaseDate: Date;
+        }>;
+      }
+    >();
 
     purchases.forEach((purchase) => {
       const raffleId = purchase.raffle.uid;
@@ -145,7 +151,7 @@ export class TicketsService {
         });
       }
 
-      const raffleData = raffleMap.get(raffleId)!;
+      const raffleData = raffleMap.get(raffleId);
       const ticketNumbers = purchase.ticketNumbers?.length
         ? [...purchase.ticketNumbers].sort((a, b) => a - b)
         : [];
@@ -217,15 +223,18 @@ export class TicketsService {
       return { raffles: [] };
     }
 
-    const raffleMap = new Map<string, {
-      raffle: any;
-      purchases: Array<{
-        purchaseUid: string;
-        ticketNumbers: number[];
-        status: PurchaseStatus;
-        purchaseDate: Date;
-      }>;
-    }>();
+    const raffleMap = new Map<
+      string,
+      {
+        raffle: any;
+        purchases: Array<{
+          purchaseUid: string;
+          ticketNumbers: number[];
+          status: PurchaseStatus;
+          purchaseDate: Date;
+        }>;
+      }
+    >();
 
     purchases.forEach((purchase) => {
       const raffleId = purchase.raffle.uid;
@@ -245,7 +254,7 @@ export class TicketsService {
         });
       }
 
-      const raffleData = raffleMap.get(raffleId)!;
+      const raffleData = raffleMap.get(raffleId);
       const ticketNumbers = purchase.ticketNumbers?.length
         ? [...purchase.ticketNumbers].sort((a, b) => a - b)
         : [];

@@ -5,6 +5,7 @@ import {
   Param,
   Query,
   Body,
+  Res,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -13,9 +14,10 @@ import {
   ApiResponse,
   ApiQuery,
   ApiBearerAuth,
+  ApiProduces,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 import { CustomersService } from './customers.service';
-import { FilterCustomersDto } from './dto/filter-customers.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ToggleBlacklistDto } from './dto/toggle-blacklist.dto';
 import { Auth } from '../auth/decorators/admin-auth.decorator';
@@ -72,8 +74,49 @@ export class CustomersController {
     return this.customersService.findAll(query);
   }
 
+  @Get('export/excel')
+  @Auth([AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @ApiOperation({ summary: 'Exportar clientes a Excel' })
+  @ApiBearerAuth('JWT-auth')
+  @ApiProduces(
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  )
+  @ApiResponse({
+    status: 200,
+    description: 'Archivo Excel de clientes generado exitosamente',
+    content: {
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
+  async exportCustomers(
+    @Query() query: Record<string, unknown>,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.customersService.exportCustomersExcel(query);
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `clientes-${timestamp}.xlsx`;
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+
+    res.send(buffer);
+  }
+
   @Get(':uid')
-  @ApiOperation({ summary: 'Obtener un cliente por su UID con rifas y tickets asociados' })
+  @ApiOperation({
+    summary: 'Obtener un cliente por su UID con rifas y tickets asociados',
+  })
   @ApiParam({
     name: 'uid',
     description: 'UID del cliente',
@@ -124,12 +167,12 @@ export class CustomersController {
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  @ApiResponse({ status: 403, description: 'Solo Super Admin puede gestionar la blacklist' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede gestionar la blacklist',
+  })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
-  toggleBlacklist(
-    @Param('uid') uid: string,
-    @Body() dto: ToggleBlacklistDto,
-  ) {
+  toggleBlacklist(@Param('uid') uid: string, @Body() dto: ToggleBlacklistDto) {
     return this.customersService.toggleBlacklist(uid, dto);
   }
 }

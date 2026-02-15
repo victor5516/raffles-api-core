@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Purchase, PurchaseStatus } from '../purchases/entities/purchase.entity';
+import {
+  Purchase,
+  PurchaseStatus,
+} from '../purchases/entities/purchase.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Raffle, RaffleStatus } from '../raffles/entities/raffle.entity';
 
@@ -91,7 +94,9 @@ export class DashboardService {
       .addSelect('customer.email', 'email')
       .addSelect('SUM(purchase.ticketQuantity)', 'totalTickets')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
       .groupBy('customer.uid')
       .addGroupBy('customer.fullName')
       .addGroupBy('customer.email')
@@ -211,16 +216,24 @@ export class DashboardService {
         .createQueryBuilder('purchase')
         .innerJoin('purchase.raffle', 'raffle')
         .select('COUNT(DISTINCT purchase.customerId)', 'count')
-        .where('raffle.status = :raffleStatus', { raffleStatus: RaffleStatus.ACTIVE })
-        .andWhere('purchase.status = :purchaseStatus', { purchaseStatus: PurchaseStatus.VERIFIED })
+        .where('raffle.status = :raffleStatus', {
+          raffleStatus: RaffleStatus.ACTIVE,
+        })
+        .andWhere('purchase.status = :purchaseStatus', {
+          purchaseStatus: PurchaseStatus.VERIFIED,
+        })
         .andWhere('purchase.verifiedAt IS NOT NULL')
         .getRawOne<{ count: string | number }>(),
       this.purchaseRepository
         .createQueryBuilder('purchase')
         .innerJoin('purchase.raffle', 'raffle')
         .select('COUNT(DISTINCT purchase.customerId)', 'count')
-        .where('raffle.status = :raffleStatus', { raffleStatus: RaffleStatus.ACTIVE })
-        .andWhere('purchase.status = :purchaseStatus', { purchaseStatus: PurchaseStatus.VERIFIED })
+        .where('raffle.status = :raffleStatus', {
+          raffleStatus: RaffleStatus.ACTIVE,
+        })
+        .andWhere('purchase.status = :purchaseStatus', {
+          purchaseStatus: PurchaseStatus.VERIFIED,
+        })
         .andWhere('purchase.verifiedAt IS NOT NULL')
         .andWhere('purchase.verifiedAt <= :end', { end: args.endOfYesterday })
         .getRawOne<{ count: string | number }>(),
@@ -283,4 +296,3 @@ export class DashboardService {
     });
   }
 }
-

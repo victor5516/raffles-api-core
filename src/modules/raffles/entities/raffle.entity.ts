@@ -39,7 +39,7 @@ export class Raffle {
   @Column({ name: 'total_tickets' })
   totalTickets: number;
 
-  @Column({ name: 'min_tickets_per_purchase', default: 1})
+  @Column({ name: 'min_tickets_per_purchase', default: 1 })
   minTicketsPerPurchase: number;
 
   @Column({ name: 'image_url', nullable: true })
@@ -72,7 +72,7 @@ export class Raffle {
   })
   selectionType: RaffleSelectionType;
 
-  @Column({name: 'external_id', nullable: true})
+  @Column({ name: 'external_id', nullable: true })
   externalId: string;
 
   @Column({ name: 'promotion_strategy', nullable: true })

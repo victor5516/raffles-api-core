@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
 
-export class AddExportedToSheetsToPurchase1770000000000
-  implements MigrationInterface
-{
+export class AddExportedToSheetsToPurchase1770000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.addColumn(
       'purchase',

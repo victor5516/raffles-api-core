@@ -87,7 +87,9 @@ export class GoogleSheetsService implements OnModuleInit {
         ],
       },
     });
-    this.logger.log(`Created sheet "${sheetName}" in spreadsheet ${spreadsheetId}`);
+    this.logger.log(
+      `Created sheet "${sheetName}" in spreadsheet ${spreadsheetId}`,
+    );
   }
 
   async getSheetValues(
@@ -123,7 +125,11 @@ export class GoogleSheetsService implements OnModuleInit {
     const columnCount = Math.max(maxRowLength, 1);
     const endColumn = this.columnLetterFromIndex(columnCount);
     const readRange = `A1:${endColumn}`;
-    const existingRows = await this.getSheetValues(spreadsheetId, sheetName, readRange);
+    const existingRows = await this.getSheetValues(
+      spreadsheetId,
+      sheetName,
+      readRange,
+    );
 
     let dataRows = existingRows;
     if (headers) {
@@ -183,7 +189,10 @@ export class GoogleSheetsService implements OnModuleInit {
         // Clear all existing rows for this UID by writing blank rows
         for (const staleIndex of currentIndexes) {
           updateData.push({
-            range: this.rangeRef(sheetName, `A${staleIndex}:${endColumn}${staleIndex}`),
+            range: this.rangeRef(
+              sheetName,
+              `A${staleIndex}:${endColumn}${staleIndex}`,
+            ),
             values: [blankRow],
           });
         }
@@ -196,7 +205,10 @@ export class GoogleSheetsService implements OnModuleInit {
         const rowIndex = currentIndexes[i];
         const values = incomingRows[i].values;
         updateData.push({
-          range: this.rangeRef(sheetName, `A${rowIndex}:${endColumn}${rowIndex}`),
+          range: this.rangeRef(
+            sheetName,
+            `A${rowIndex}:${endColumn}${rowIndex}`,
+          ),
           values: [values],
         });
       }
@@ -208,7 +220,10 @@ export class GoogleSheetsService implements OnModuleInit {
         const staleIndexes = currentIndexes.slice(incomingRows.length);
         for (const staleIndex of staleIndexes) {
           updateData.push({
-            range: this.rangeRef(sheetName, `A${staleIndex}:${endColumn}${staleIndex}`),
+            range: this.rangeRef(
+              sheetName,
+              `A${staleIndex}:${endColumn}${staleIndex}`,
+            ),
             values: [blankRow],
           });
         }
@@ -278,7 +293,9 @@ export class GoogleSheetsService implements OnModuleInit {
       return false;
     }
     for (let i = 0; i < headers.length; i++) {
-      const current = String(row[i] ?? '').trim().toLowerCase();
+      const current = String(row[i] ?? '')
+        .trim()
+        .toLowerCase();
       const expected = String(headers[i]).trim().toLowerCase();
       if (current !== expected) {
         return false;

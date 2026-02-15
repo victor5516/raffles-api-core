@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { EntityManager, Brackets } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
@@ -472,4 +468,3 @@ export class PurchaseVerificationService {
     });
   }
 }
-

@@ -18,7 +18,14 @@ import { TicketAllocationService } from './services/ticket-allocation.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Purchase, Ticket, Customer, Raffle, PaymentMethod, Currency]),
+    TypeOrmModule.forFeature([
+      Purchase,
+      Ticket,
+      Customer,
+      Raffle,
+      PaymentMethod,
+      Currency,
+    ]),
     // MailModule, // Deshabilitado: SES no funciona
   ],
   controllers: [PurchasesController],

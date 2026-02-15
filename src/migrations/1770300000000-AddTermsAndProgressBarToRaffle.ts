@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
 
-export class AddTermsAndProgressBarToRaffle1770300000000
-  implements MigrationInterface
-{
+export class AddTermsAndProgressBarToRaffle1770300000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.addColumn(
       'raffle',
@@ -29,4 +27,3 @@ export class AddTermsAndProgressBarToRaffle1770300000000
     await queryRunner.dropColumn('raffle', 'terms_and_conditions');
   }
 }
-

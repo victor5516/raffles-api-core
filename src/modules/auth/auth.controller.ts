@@ -82,7 +82,9 @@ export class AuthController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @Auth(AdminRole.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Crear un nuevo administrador o verificador (solo Super Admin)' })
+  @ApiOperation({
+    summary: 'Crear un nuevo administrador o verificador (solo Super Admin)',
+  })
   @ApiBearerAuth('JWT-auth')
   @ApiBody({ type: CreateAdminDto })
   @ApiResponse({
@@ -117,7 +119,10 @@ export class AuthController {
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  @ApiResponse({ status: 403, description: 'Solo Super Admin puede crear administradores' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede crear administradores',
+  })
   @ApiResponse({ status: 409, description: 'El email ya está en uso' })
   async createAdmin(@Body() createAdminDto: CreateAdminDto) {
     return this.authService.createAdmin(createAdminDto);
@@ -125,21 +130,28 @@ export class AuthController {
 
   @Get()
   @Auth(AdminRole.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Obtener todos los administradores (solo Super Admin)' })
+  @ApiOperation({
+    summary: 'Obtener todos los administradores (solo Super Admin)',
+  })
   @ApiBearerAuth('JWT-auth')
   @ApiResponse({
     status: 200,
     description: 'Lista de administradores obtenida exitosamente',
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  @ApiResponse({ status: 403, description: 'Solo Super Admin puede ver administradores' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede ver administradores',
+  })
   async findAll() {
     return this.authService.findAll();
   }
 
   @Get(':uid')
   @Auth(AdminRole.SUPER_ADMIN)
-  @ApiOperation({ summary: 'Obtener un administrador por UID (solo Super Admin)' })
+  @ApiOperation({
+    summary: 'Obtener un administrador por UID (solo Super Admin)',
+  })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
     name: 'uid',
@@ -152,7 +164,10 @@ export class AuthController {
     description: 'Administrador encontrado',
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  @ApiResponse({ status: 403, description: 'Solo Super Admin puede ver administradores' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede ver administradores',
+  })
   @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
   async findOne(@Param('uid') uid: string) {
     return this.authService.findOne(uid);
@@ -175,10 +190,16 @@ export class AuthController {
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  @ApiResponse({ status: 403, description: 'Solo Super Admin puede actualizar administradores' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede actualizar administradores',
+  })
   @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
   @ApiResponse({ status: 409, description: 'El email ya está en uso' })
-  async update(@Param('uid') uid: string, @Body() updateAdminDto: UpdateAdminDto) {
+  async update(
+    @Param('uid') uid: string,
+    @Body() updateAdminDto: UpdateAdminDto,
+  ) {
     return this.authService.update(uid, updateAdminDto);
   }
 
@@ -197,7 +218,10 @@ export class AuthController {
     description: 'Administrador eliminado exitosamente',
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  @ApiResponse({ status: 403, description: 'Solo Super Admin puede eliminar administradores' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede eliminar administradores',
+  })
   @ApiResponse({ status: 404, description: 'Administrador no encontrado' })
   async remove(@Param('uid') uid: string) {
     await this.authService.remove(uid);

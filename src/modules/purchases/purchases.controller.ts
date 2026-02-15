@@ -94,7 +94,8 @@ export class PurchasesController {
     if (typeof createDto.ticket_numbers === 'string') {
       try {
         const parsed: unknown = JSON.parse(createDto.ticket_numbers);
-        createDto.ticket_numbers = parsed as CreatePurchaseDto['ticket_numbers'];
+        createDto.ticket_numbers =
+          parsed as CreatePurchaseDto['ticket_numbers'];
       } catch {
         // invalid json, validation pipe might catch it later or it stays string
       }
@@ -221,7 +222,9 @@ export class PurchasesController {
   @Auth([AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @ApiOperation({ summary: 'Exportar compras a Excel' })
   @ApiBearerAuth('JWT-auth')
-  @ApiProduces('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  @ApiProduces(
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  )
   @ApiResponse({
     status: 200,
     description: 'Archivo Excel generado exitosamente',
@@ -355,21 +358,28 @@ export class PurchasesController {
     @UploadedFile() file?: Express.Multer.File,
     @ActiveUser() user?: Admin,
   ) {
-    const isVerifierLike = user?.role === AdminRole.VERIFIER || user?.role === AdminRole.VERIFIER_EXPORT;
+    const isVerifierLike =
+      user?.role === AdminRole.VERIFIER ||
+      user?.role === AdminRole.VERIFIER_EXPORT;
     if (isVerifierLike) {
       if (file) {
         throw new ForbiddenException('Solo puede actualizar el campo notas.');
       }
-      const keysWithValue = (Object.keys(updateDto) as (keyof UpdatePurchaseDto)[]).filter(
-        (k) => updateDto[k] !== undefined && updateDto[k] !== '',
-      );
-      const onlyNotes = keysWithValue.length === 0 || keysWithValue.every((k) => k === 'notes');
+      const keysWithValue = (
+        Object.keys(updateDto) as (keyof UpdatePurchaseDto)[]
+      ).filter((k) => updateDto[k] !== undefined && updateDto[k] !== '');
+      const onlyNotes =
+        keysWithValue.length === 0 || keysWithValue.every((k) => k === 'notes');
       if (!onlyNotes) {
         throw new ForbiddenException('Solo puede actualizar el campo notas.');
       }
     }
 
-    const dto = updateDto as { customer?: unknown; ticket_numbers?: unknown; payments?: unknown };
+    const dto = updateDto as {
+      customer?: unknown;
+      ticket_numbers?: unknown;
+      payments?: unknown;
+    };
     if (typeof dto.customer === 'string') {
       try {
         dto.customer = JSON.parse(dto.customer) as unknown;
@@ -391,7 +401,13 @@ export class PurchasesController {
         // leave as-is
       }
     }
-    return this.purchasesService.update(uid, updateDto, file, user?.uid, user?.role);
+    return this.purchasesService.update(
+      uid,
+      updateDto,
+      file,
+      user?.uid,
+      user?.role,
+    );
   }
 
   @Patch(':uid/status')
@@ -417,7 +433,12 @@ export class PurchasesController {
     @Body() updateDto: UpdatePurchaseStatusDto,
     @ActiveUser() user: Admin,
   ) {
-    return this.purchasesService.updateStatus(uid, updateDto, user.role, user.uid);
+    return this.purchasesService.updateStatus(
+      uid,
+      updateDto,
+      user.role,
+      user.uid,
+    );
   }
 
   @Patch(':uid/audit')
@@ -460,7 +481,10 @@ export class PurchasesController {
     description: 'Compra eliminada exitosamente',
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  @ApiResponse({ status: 403, description: 'Solo Super Admin puede eliminar compras' })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede eliminar compras',
+  })
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
   remove(@Param('uid') uid: string) {
     return this.purchasesService.remove(uid);
@@ -494,7 +518,9 @@ export class PurchasesController {
   }
 
   @Post('webhooks/ai-result')
-  @ApiOperation({ summary: 'Webhook para recibir resultados del análisis de IA' })
+  @ApiOperation({
+    summary: 'Webhook para recibir resultados del análisis de IA',
+  })
   @ApiHeader({
     name: 'x-internal-secret',
     description: 'Firma secreta para autenticar el webhook',
@@ -506,9 +532,15 @@ export class PurchasesController {
   })
   @ApiResponse({ status: 401, description: 'Firma inválida o faltante' })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
-  processAiWebhook(@Body() webhook: AiWebhookDto, @Headers('x-internal-secret') signature: string) {
-    const aiWebhookSignature = this.configService.getOrThrow<string>('AI_WEBHOOK_SIGNATURE');
-    if (!signature || signature !== aiWebhookSignature) throw new UnauthorizedException('Signature is required');
+  processAiWebhook(
+    @Body() webhook: AiWebhookDto,
+    @Headers('x-internal-secret') signature: string,
+  ) {
+    const aiWebhookSignature = this.configService.getOrThrow<string>(
+      'AI_WEBHOOK_SIGNATURE',
+    );
+    if (!signature || signature !== aiWebhookSignature)
+      throw new UnauthorizedException('Signature is required');
     return this.purchasesService.processAiWebhook(webhook);
   }
 
@@ -518,7 +550,9 @@ export class PurchasesController {
       storage: memoryStorage(),
     }),
   )
-  @ApiOperation({ summary: 'Webhook para crear compras desde auditoría (sistema externo)' })
+  @ApiOperation({
+    summary: 'Webhook para crear compras desde auditoría (sistema externo)',
+  })
   @ApiHeader({
     name: 'x-internal-secret',
     description: 'Firma secreta para autenticar el webhook',
@@ -538,19 +572,24 @@ export class PurchasesController {
     @UploadedFile() file: Express.Multer.File,
     @Headers('x-internal-secret') signature: string,
   ) {
-    const auditWebhookSignature =
-      this.configService.getOrThrow<string>('AUDIT_WEBHOOK_SIGNATURE');
+    const auditWebhookSignature = this.configService.getOrThrow<string>(
+      'AUDIT_WEBHOOK_SIGNATURE',
+    );
     if (!signature || signature !== auditWebhookSignature) {
       throw new UnauthorizedException('Signature is required');
     }
 
     // In multipart/form-data, arrays/objects may arrive as JSON strings
-    if (typeof (webhook as unknown as { ticket_numbers?: unknown }).ticket_numbers === 'string') {
+    if (
+      typeof (webhook as unknown as { ticket_numbers?: unknown })
+        .ticket_numbers === 'string'
+    ) {
       try {
         const parsed: unknown = JSON.parse(
           (webhook as unknown as { ticket_numbers: string }).ticket_numbers,
         );
-        (webhook as unknown as { ticket_numbers?: unknown }).ticket_numbers = parsed;
+        (webhook as unknown as { ticket_numbers?: unknown }).ticket_numbers =
+          parsed;
       } catch {
         // leave as-is; validation/handling will decide
       }
@@ -560,7 +599,9 @@ export class PurchasesController {
   }
 
   @Sse('sse/stream')
-  @ApiOperation({ summary: 'Stream de eventos Server-Sent Events para compras' })
+  @ApiOperation({
+    summary: 'Stream de eventos Server-Sent Events para compras',
+  })
   @ApiResponse({
     status: 200,
     description: 'Stream de eventos activo',
@@ -574,7 +615,10 @@ export class PurchasesController {
   })
   sseStream(): Observable<MessageEvent> {
     const purchaseCreated$ = fromEvent(this.eventEmitter, 'purchase.created');
-    const purchaseStatusChanged$ = fromEvent(this.eventEmitter, 'purchase.status_changed');
+    const purchaseStatusChanged$ = fromEvent(
+      this.eventEmitter,
+      'purchase.status_changed',
+    );
 
     return merge(purchaseCreated$, purchaseStatusChanged$).pipe(
       map((payload) => ({

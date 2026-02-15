@@ -104,7 +104,7 @@ export class PurchasesExportService {
     purchases.forEach((p) => {
       const pmId = p.paymentMethodId;
       if (purchasesByPaymentMethod.has(pmId)) {
-        purchasesByPaymentMethod.get(pmId)!.push(p);
+        purchasesByPaymentMethod.get(pmId).push(p);
       }
     });
 

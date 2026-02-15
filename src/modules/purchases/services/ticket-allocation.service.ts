@@ -5,7 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
-import { Raffle, RaffleSelectionType } from '../../raffles/entities/raffle.entity';
+import {
+  Raffle,
+  RaffleSelectionType,
+} from '../../raffles/entities/raffle.entity';
 import { Purchase, PurchaseStatus } from '../entities/purchase.entity';
 import { CreatePurchaseDto } from '../dto/create-purchase.dto';
 
@@ -30,11 +33,7 @@ export class TicketAllocationService {
       );
     }
 
-    await this.ensureRandomAvailability(
-      manager,
-      raffle,
-      dto.ticket_quantity,
-    );
+    await this.ensureRandomAvailability(manager, raffle, dto.ticket_quantity);
     return null; // Will be assigned later in assignRandomNumbers
   }
 
@@ -67,9 +66,7 @@ export class TicketAllocationService {
       throw new BadRequestException('ticket_numbers contains duplicates');
     }
 
-    const invalid = numbers.filter(
-      (n) => n < 0 || n >= raffle.totalTickets,
-    );
+    const invalid = numbers.filter((n) => n < 0 || n >= raffle.totalTickets);
     if (invalid.length > 0) {
       throw new BadRequestException(
         `Invalid numbers (out of range): ${invalid.join(', ')}`,
@@ -118,7 +115,9 @@ export class TicketAllocationService {
     const available = raffle.totalTickets - occupied;
 
     if (available < quantity) {
-      throw new ConflictException(`Not enough tickets. Available: ${available}`);
+      throw new ConflictException(
+        `Not enough tickets. Available: ${available}`,
+      );
     }
   }
 
@@ -228,4 +227,3 @@ export class TicketAllocationService {
     // this.eventEmitter.emit(...)
   }
 }
-

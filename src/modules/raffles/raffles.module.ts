@@ -8,7 +8,10 @@ import { Purchase } from '../purchases/entities/purchase.entity';
 import { CurrenciesModule } from '../currencies/currencies.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Raffle, Ticket, Purchase]), CurrenciesModule],
+  imports: [
+    TypeOrmModule.forFeature([Raffle, Ticket, Purchase]),
+    CurrenciesModule,
+  ],
   controllers: [RafflesController],
   providers: [RafflesService],
   exports: [RafflesService],

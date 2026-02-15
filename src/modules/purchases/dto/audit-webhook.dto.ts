@@ -1,13 +1,27 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNumberString, IsString, IsNotEmpty, IsEmail, IsOptional, IsUrl } from 'class-validator';
+import {
+  IsNumberString,
+  IsString,
+  IsNotEmpty,
+  IsEmail,
+  IsOptional,
+  IsUrl,
+} from 'class-validator';
 
 export class AuditWebhookDto {
-  @ApiProperty({ description: 'UID de la rifa (ID del sistema externo)', example: '123e4567...' })
+  @ApiProperty({
+    description: 'UID de la rifa (ID del sistema externo)',
+    example: '123e4567...',
+  })
   @IsString()
   @IsNotEmpty()
   raffle_id: string;
 
-  @ApiProperty({ description: 'Cantidad de tickets', example: '5', type: String })
+  @ApiProperty({
+    description: 'Cantidad de tickets',
+    example: '5',
+    type: String,
+  })
   @IsNumberString() // Valida que el string sea un número ("5")
   @IsNotEmpty()
   ticket_quantity: string; // En DTOs de entrada, mejor string para evitar conflictos de parseo
@@ -37,17 +51,26 @@ export class AuditWebhookDto {
   @IsString()
   phone: string;
 
-  @ApiProperty({ description: 'ID del método de pago (ID Externo)', example: '11' })
+  @ApiProperty({
+    description: 'ID del método de pago (ID Externo)',
+    example: '11',
+  })
   @IsString()
   @IsNotEmpty()
   payment_method_id: string;
 
-  @ApiProperty({ description: 'Nombre del método de pago (Respaldo)', example: 'Pago Móvil' })
+  @ApiProperty({
+    description: 'Nombre del método de pago (Respaldo)',
+    example: 'Pago Móvil',
+  })
   @IsString()
   @IsOptional() // Hazlo opcional por si acaso
   payment_method_name?: string;
 
-  @ApiProperty({ description: 'URL de la imagen (si la tienen hosteada)', required: false })
+  @ApiProperty({
+    description: 'URL de la imagen (si la tienen hosteada)',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   payment_screenshot?: string;
@@ -62,7 +85,11 @@ export class AuditWebhookDto {
   @IsNotEmpty()
   currency_symbol: string;
 
-  @ApiProperty({ description: 'Fecha original de compra (ISO 8601)', example: '2025-12-31T10:00:00Z', required: false })
+  @ApiProperty({
+    description: 'Fecha original de compra (ISO 8601)',
+    example: '2025-12-31T10:00:00Z',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   created_at?: string;

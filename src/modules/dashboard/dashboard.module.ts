@@ -12,4 +12,3 @@ import { Raffle } from '../raffles/entities/raffle.entity';
   providers: [DashboardService],
 })
 export class DashboardModule {}
-

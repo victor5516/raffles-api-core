@@ -118,7 +118,8 @@ export class CreateRaffleDto {
   gallery?: string[];
 
   @ApiPropertyOptional({
-    description: 'Estrategia de promoción: nxm (lleva N paga M) o percentage (descuento %)',
+    description:
+      'Estrategia de promoción: nxm (lleva N paga M) o percentage (descuento %)',
     enum: PromotionStrategy,
     example: PromotionStrategy.NXM,
   })

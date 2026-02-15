@@ -52,4 +52,3 @@ export class DashboardController {
     return this.dashboardService.getTopCustomers(raffleId);
   }
 }
-

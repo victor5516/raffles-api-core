@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
 
-export class AddPaymentsJsonToPurchase1770100000000
-  implements MigrationInterface
-{
+export class AddPaymentsJsonToPurchase1770100000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Add 'payments' JSONB column
     await queryRunner.addColumn(

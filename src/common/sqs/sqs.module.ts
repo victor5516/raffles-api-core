@@ -9,4 +9,3 @@ import { SqsService } from './sqs.service';
   exports: [SqsService],
 })
 export class SqsModule {}
-

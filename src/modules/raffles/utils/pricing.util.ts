@@ -29,7 +29,10 @@ export type PromotionConfig = NxmPromotionConfig | PercentagePromotionConfig;
 const ROUND_DECIMALS = 2;
 
 function roundMoney(value: number): number {
-  return Math.round(value * Math.pow(10, ROUND_DECIMALS)) / Math.pow(10, ROUND_DECIMALS);
+  return (
+    Math.round(value * Math.pow(10, ROUND_DECIMALS)) /
+    Math.pow(10, ROUND_DECIMALS)
+  );
 }
 
 function isValidRule(g: { buy?: number; pay?: number }): boolean {
@@ -48,16 +51,22 @@ function getNxmRules(config: Record<string, unknown>): NxmRule[] {
   if (config.rules && Array.isArray(config.rules)) {
     return (config.rules as Array<{ buy?: number; pay?: number }>)
       .filter(isValidRule)
-      .map((g) => ({ buy: g.buy!, pay: g.pay! }));
+      .map((g) => ({ buy: g.buy, pay: g.pay }));
   }
   if (config.groups && Array.isArray(config.groups)) {
     return (config.groups as Array<{ buy?: number; pay?: number }>)
       .filter(isValidRule)
-      .map((g) => ({ buy: g.buy!, pay: g.pay! }));
+      .map((g) => ({ buy: g.buy, pay: g.pay }));
   }
   const buy = Number(config.buy);
   const pay = Number(config.pay);
-  if (Number.isFinite(buy) && Number.isFinite(pay) && buy >= 1 && pay >= 0 && pay <= buy) {
+  if (
+    Number.isFinite(buy) &&
+    Number.isFinite(pay) &&
+    buy >= 1 &&
+    pay >= 0 &&
+    pay <= buy
+  ) {
     return [{ buy, pay }];
   }
   return [];

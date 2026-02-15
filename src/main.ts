@@ -22,7 +22,8 @@ async function bootstrap() {
   // Swagger configuration - Solo en desarrollo
   if (process.env.NODE_ENV !== 'production') {
     try {
-      const { SwaggerModule, DocumentBuilder } = await import('@nestjs/swagger');
+      const { SwaggerModule, DocumentBuilder } =
+        await import('@nestjs/swagger');
 
       const config = new DocumentBuilder()
         .setTitle('Raffles API')

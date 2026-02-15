@@ -104,8 +104,7 @@ export class PurchasesService {
         throw new NotFoundException('Payment method not found');
       }
       const unitPriceInPaymentCurrency =
-        Number(raffle.ticketPrice) *
-        Number(paymentMethod.currency?.value ?? 1);
+        Number(raffle.ticketPrice) * Number(paymentMethod.currency?.value ?? 1);
       const calculatedTotal = calculatePromotionalTotal(
         unitPriceInPaymentCurrency,
         createDto.ticket_quantity,
@@ -116,11 +115,12 @@ export class PurchasesService {
 
       // 3. Validate Capacity & Reserve Tickets Strategy
       // Returns specific numbers if selected, or null if random (to be assigned later)
-      const ticketNumbers = await this.allocationService.determineAllocationStrategy(
-        manager,
-        raffle,
-        createDto,
-      );
+      const ticketNumbers =
+        await this.allocationService.determineAllocationStrategy(
+          manager,
+          raffle,
+          createDto,
+        );
 
       // 4. Customer & File Handling
       const customer = await this.getOrCreateCustomer(
@@ -176,7 +176,8 @@ export class PurchasesService {
         paymentMethodId: createDto.paymentMethodId,
         ticketQuantity: createDto.ticket_quantity,
         totalAmount: totalAmountToPersist,
-        bankReference: createDto.bank_reference || paymentsArray[0]?.reference || '',
+        bankReference:
+          createDto.bank_reference || paymentsArray[0]?.reference || '',
         paymentScreenshotUrl: screenshotKey,
         customerId: customer.uid,
         status: PurchaseStatus.PENDING,
@@ -185,7 +186,10 @@ export class PurchasesService {
         totalPaid,
       });
 
-      return { purchase: await manager.save(Purchase, purchase), paymentMethod };
+      return {
+        purchase: await manager.save(Purchase, purchase),
+        paymentMethod,
+      };
     });
 
     const createdPurchase = result.purchase;
@@ -281,7 +285,10 @@ export class PurchasesService {
       // Note: If VERIFIED and no numbers provided, we might want to auto-assign here.
       // Logic left optional based on business requirements.
 
-      return { purchase: await manager.save(Purchase, purchase), paymentMethod };
+      return {
+        purchase: await manager.save(Purchase, purchase),
+        paymentMethod,
+      };
     });
 
     const createdPurchase = result.purchase;
@@ -343,14 +350,23 @@ export class PurchasesService {
       if (!purchase) throw new NotFoundException('Purchase not found');
 
       // Business rule: VERIFIER and VERIFIER_EXPORT can only verify, not reject
-      const isVerifierLike = adminRole === AdminRole.VERIFIER || adminRole === AdminRole.VERIFIER_EXPORT;
+      const isVerifierLike =
+        adminRole === AdminRole.VERIFIER ||
+        adminRole === AdminRole.VERIFIER_EXPORT;
       if (isVerifierLike && status === PurchaseStatus.REJECTED) {
-        throw new ForbiddenException('Verifiers cannot reject purchases. Only verification is allowed.');
+        throw new ForbiddenException(
+          'Verifiers cannot reject purchases. Only verification is allowed.',
+        );
       }
 
       // Business rule: Only SUPER_ADMIN can revert a verified purchase
-      if (purchase.status === PurchaseStatus.VERIFIED && adminRole !== AdminRole.SUPER_ADMIN) {
-        throw new ForbiddenException('Only Super Admin can revert a verified purchase');
+      if (
+        purchase.status === PurchaseStatus.VERIFIED &&
+        adminRole !== AdminRole.SUPER_ADMIN
+      ) {
+        throw new ForbiddenException(
+          'Only Super Admin can revert a verified purchase',
+        );
       }
 
       purchase.status = status;
@@ -408,9 +424,12 @@ export class PurchasesService {
     adminId?: string,
     adminRole?: AdminRole,
   ) {
-    const isVerifierLike = adminRole === AdminRole.VERIFIER || adminRole === AdminRole.VERIFIER_EXPORT;
-    const effectiveDto: UpdatePurchaseDto =
-      isVerifierLike ? { notes: updateDto.notes } : updateDto;
+    const isVerifierLike =
+      adminRole === AdminRole.VERIFIER ||
+      adminRole === AdminRole.VERIFIER_EXPORT;
+    const effectiveDto: UpdatePurchaseDto = isVerifierLike
+      ? { notes: updateDto.notes }
+      : updateDto;
     const effectiveFile = isVerifierLike ? undefined : file;
 
     await this.dataSource.transaction(async (manager) => {
@@ -443,7 +462,10 @@ export class PurchasesService {
       }
 
       if (effectiveDto.customer !== undefined) {
-        const customer = await this.getOrCreateCustomer(manager, effectiveDto.customer);
+        const customer = await this.getOrCreateCustomer(
+          manager,
+          effectiveDto.customer,
+        );
         purchase.customerId = customer.uid;
       } else if (effectiveDto.customerId !== undefined) {
         const customer = await manager.findOne(Customer, {
@@ -453,14 +475,21 @@ export class PurchasesService {
         purchase.customerId = effectiveDto.customerId;
       }
 
-      const raffle = purchase.raffle ?? (await manager.findOne(Raffle, { where: { uid: purchase.raffleId } }));
+      const raffle =
+        purchase.raffle ??
+        (await manager.findOne(Raffle, { where: { uid: purchase.raffleId } }));
 
       if (effectiveDto.ticket_numbers !== undefined) {
         const numbers = effectiveDto.ticket_numbers;
         if (numbers.length === 0) {
-          throw new BadRequestException('ticket_numbers must contain at least one number');
+          throw new BadRequestException(
+            'ticket_numbers must contain at least one number',
+          );
         }
-        if (effectiveDto.ticket_quantity !== undefined && numbers.length !== effectiveDto.ticket_quantity) {
+        if (
+          effectiveDto.ticket_quantity !== undefined &&
+          numbers.length !== effectiveDto.ticket_quantity
+        ) {
           throw new BadRequestException(
             `ticket_quantity (${effectiveDto.ticket_quantity}) must match ticket_numbers length (${numbers.length})`,
           );
@@ -470,7 +499,9 @@ export class PurchasesService {
         if (uniqueNumbers.size !== numbers.length) {
           throw new BadRequestException('ticket_numbers contains duplicates');
         }
-        const invalid = numbers.filter((n) => n < 0 || n >= raffle.totalTickets);
+        const invalid = numbers.filter(
+          (n) => n < 0 || n >= raffle.totalTickets,
+        );
         if (invalid.length > 0) {
           throw new BadRequestException(
             `Invalid ticket numbers (out of range): ${invalid.join(', ')}`,
@@ -491,7 +522,10 @@ export class PurchasesService {
         purchase.ticketQuantity = numbers.length;
       } else if (effectiveDto.ticket_quantity !== undefined) {
         const existingCount = purchase.ticketNumbers?.length ?? 0;
-        if (existingCount > 0 && effectiveDto.ticket_quantity !== existingCount) {
+        if (
+          existingCount > 0 &&
+          effectiveDto.ticket_quantity !== existingCount
+        ) {
           throw new BadRequestException(
             `ticket_quantity must match the number of assigned tickets (${existingCount})`,
           );
@@ -500,14 +534,18 @@ export class PurchasesService {
       }
 
       if (effectiveFile) {
-        const key = await this.uploadPaymentScreenshot(effectiveFile, purchase.raffleId);
+        const key = await this.uploadPaymentScreenshot(
+          effectiveFile,
+          purchase.raffleId,
+        );
         if (key) purchase.paymentScreenshotUrl = key;
       } else if (effectiveDto.payment_screenshot_url !== undefined) {
         purchase.paymentScreenshotUrl = effectiveDto.payment_screenshot_url;
       }
 
       if (effectiveDto.notes !== undefined) purchase.notes = effectiveDto.notes;
-      if (effectiveDto.bank_reference !== undefined) purchase.bankReference = effectiveDto.bank_reference;
+      if (effectiveDto.bank_reference !== undefined)
+        purchase.bankReference = effectiveDto.bank_reference;
       if (effectiveDto.status !== undefined) {
         purchase.status = effectiveDto.status;
         if (effectiveDto.status === PurchaseStatus.VERIFIED) {
@@ -522,7 +560,8 @@ export class PurchasesService {
           }
         }
       }
-      if (effectiveDto.totalAmount !== undefined) purchase.totalAmount = effectiveDto.totalAmount;
+      if (effectiveDto.totalAmount !== undefined)
+        purchase.totalAmount = effectiveDto.totalAmount;
 
       if (effectiveDto.payments !== undefined) {
         purchase.payments = effectiveDto.payments.map((p) => ({
@@ -543,7 +582,10 @@ export class PurchasesService {
       }
 
       const ticketNumbersLength = purchase.ticketNumbers?.length;
-      if (ticketNumbersLength != null && purchase.ticketQuantity !== ticketNumbersLength) {
+      if (
+        ticketNumbersLength != null &&
+        purchase.ticketQuantity !== ticketNumbersLength
+      ) {
         throw new BadRequestException(
           `ticket_quantity (${purchase.ticketQuantity}) must equal the number of assigned tickets (${ticketNumbersLength})`,
         );
@@ -697,16 +739,15 @@ export class PurchasesService {
         : undefined;
     const customerName =
       typeof query.customerName === 'string' ? query.customerName : undefined;
-    const email =
-      typeof query.email === 'string' ? query.email : undefined;
-    const phone =
-      typeof query.phone === 'string' ? query.phone : undefined;
+    const email = typeof query.email === 'string' ? query.email : undefined;
+    const phone = typeof query.phone === 'string' ? query.phone : undefined;
     const dateFrom =
       typeof query.dateFrom === 'string' ? query.dateFrom : undefined;
-    const dateTo =
-      typeof query.dateTo === 'string' ? query.dateTo : undefined;
+    const dateTo = typeof query.dateTo === 'string' ? query.dateTo : undefined;
     const verificationSource =
-      typeof query.verificationSource === 'string' ? query.verificationSource : undefined;
+      typeof query.verificationSource === 'string'
+        ? query.verificationSource
+        : undefined;
 
     const pageRaw = query.page;
     const limitRaw = query.limit;
@@ -752,7 +793,9 @@ export class PurchasesService {
       qb.andWhere('currency.symbol = :currency', { currency });
     }
     if (verificationSource) {
-      qb.andWhere('purchase.verificationSource = :verificationSource', { verificationSource });
+      qb.andWhere('purchase.verificationSource = :verificationSource', {
+        verificationSource,
+      });
     }
     if (paymentMethodId) {
       qb.andWhere('purchase.paymentMethodId = :paymentMethodId', {
@@ -782,7 +825,9 @@ export class PurchasesService {
     if (dateFrom) {
       const dateFromStart = new Date(dateFrom);
       dateFromStart.setHours(0, 0, 0, 0);
-      qb.andWhere('purchase.submittedAt >= :dateFrom', { dateFrom: dateFromStart });
+      qb.andWhere('purchase.submittedAt >= :dateFrom', {
+        dateFrom: dateFromStart,
+      });
     }
     if (dateTo) {
       // Add one day to include the entire end date
@@ -809,8 +854,7 @@ export class PurchasesService {
         evidenceUrl: this.s3Service.getCdnUrl(p.evidenceUrl) ?? p.evidenceUrl,
       }));
 
-      const { currency, ...paymentMethodRest } =
-        purchase.paymentMethod || {};
+      const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
       return {
         ...purchase,
         paymentScreenshotUrl:
@@ -863,9 +907,7 @@ export class PurchasesService {
     const paymentScreenshotUrl = this.s3Service.getCdnUrl(
       purchase.paymentScreenshotUrl,
     );
-    const raffleImageUrl = this.s3Service.getCdnUrl(
-      purchase.raffle?.imageUrl,
-    );
+    const raffleImageUrl = this.s3Service.getCdnUrl(purchase.raffle?.imageUrl);
     const paymentMethodImageUrl = this.s3Service.getCdnUrl(
       purchase.paymentMethod?.imageUrl,
     );
@@ -1023,8 +1065,7 @@ export class PurchasesService {
         bankReference: `%${bankReference}%`,
       });
     }
-    if (currency)
-      qb.andWhere('pmCurrency.symbol = :currency', { currency });
+    if (currency) qb.andWhere('pmCurrency.symbol = :currency', { currency });
     if (paymentMethodId)
       qb.andWhere('purchase.paymentMethodId = :paymentMethodId', {
         paymentMethodId,
@@ -1052,7 +1093,9 @@ export class PurchasesService {
     if (dateFrom) {
       const dateFromStart = new Date(dateFrom);
       dateFromStart.setHours(0, 0, 0, 0);
-      qb.andWhere('purchase.submittedAt >= :dateFrom', { dateFrom: dateFromStart });
+      qb.andWhere('purchase.submittedAt >= :dateFrom', {
+        dateFrom: dateFromStart,
+      });
     }
     if (dateTo) {
       // Add one day to include the entire end date
@@ -1170,9 +1213,15 @@ export class PurchasesService {
     name?: string,
   ): Promise<PaymentMethod> {
     const relations = ['currency'];
-    let pm = await manager.findOne(PaymentMethod, { where: { externalId: id }, relations });
+    let pm = await manager.findOne(PaymentMethod, {
+      where: { externalId: id },
+      relations,
+    });
     if (!pm && this.isUUID(id)) {
-      pm = await manager.findOne(PaymentMethod, { where: { uid: id }, relations });
+      pm = await manager.findOne(PaymentMethod, {
+        where: { uid: id },
+        relations,
+      });
     }
     if (!pm && name) {
       pm = await manager.findOne(PaymentMethod, {

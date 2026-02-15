@@ -50,7 +50,8 @@ export class PaymentItemDto {
   evidenceUrl?: string;
 
   @ApiPropertyOptional({
-    description: 'UID del método de pago para este abono (si difiere del principal)',
+    description:
+      'UID del método de pago para este abono (si difiere del principal)',
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @IsOptional()
@@ -139,7 +140,8 @@ export class CreatePurchaseDto {
   ticket_quantity: number;
 
   @ApiPropertyOptional({
-    description: 'Referencia bancaria del pago (requerido si no se envía payments[])',
+    description:
+      'Referencia bancaria del pago (requerido si no se envía payments[])',
     example: 'REF123456789',
   })
   @IsOptional()
@@ -155,7 +157,8 @@ export class CreatePurchaseDto {
   customer: CustomerDto;
 
   @ApiPropertyOptional({
-    description: 'URL de la captura de pantalla del pago (se puede subir archivo o proporcionar URL)',
+    description:
+      'URL de la captura de pantalla del pago (se puede subir archivo o proporcionar URL)',
     example: 'https://example.com/screenshot.jpg',
   })
   // payment_screenshot_url handled by interceptor
@@ -174,7 +177,8 @@ export class CreatePurchaseDto {
   totalAmount: number;
 
   @ApiPropertyOptional({
-    description: 'Números de tickets específicos a comprar (requerido para rifas de tipo SPECIFIC)',
+    description:
+      'Números de tickets específicos a comprar (requerido para rifas de tipo SPECIFIC)',
     example: [1, 5, 10, 15, 20],
     type: [Number],
     isArray: true,
@@ -192,7 +196,9 @@ export class CreatePurchaseDto {
     return value;
   })
   @IsArray()
-  @ArrayMinSize(1, { message: 'ticket_numbers must contain at least one number' })
+  @ArrayMinSize(1, {
+    message: 'ticket_numbers must contain at least one number',
+  })
   @IsInt({ each: true })
   @Min(0, { each: true })
   ticket_numbers?: number[];

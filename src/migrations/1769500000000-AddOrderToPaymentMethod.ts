@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
 
-export class AddOrderToPaymentMethod1769500000000
-  implements MigrationInterface
-{
+export class AddOrderToPaymentMethod1769500000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.addColumn(
       'payment_method',
@@ -19,4 +17,3 @@ export class AddOrderToPaymentMethod1769500000000
     await queryRunner.dropColumn('payment_method', 'order');
   }
 }
-

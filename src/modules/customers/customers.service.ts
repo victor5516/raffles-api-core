@@ -4,7 +4,8 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, ILike, In } from 'typeorm';
+import { Repository, In } from 'typeorm';
+import * as ExcelJS from 'exceljs';
 import { Customer } from './entities/customer.entity';
 import { Purchase } from '../purchases/entities/purchase.entity';
 import { Ticket } from '../tickets/entities/ticket.entity';
@@ -25,7 +26,7 @@ export class CustomersService {
     private s3Service: S3Service,
   ) {}
 
-  async findAll(query: Record<string, unknown>) {
+  private buildCustomersQuery(query: Record<string, unknown>) {
     const nationalId =
       typeof query.nationalId === 'string' ? query.nationalId : undefined;
     const phone = typeof query.phone === 'string' ? query.phone : undefined;
@@ -34,24 +35,9 @@ export class CustomersService {
     const isBlacklisted =
       typeof query.isBlacklisted === 'string' ? query.isBlacklisted : undefined;
 
-    const pageRaw = query.page;
-    const limitRaw = query.limit;
-    const page =
-      typeof pageRaw === 'string' || typeof pageRaw === 'number'
-        ? Math.max(1, Number(pageRaw))
-        : 1;
-    const limit =
-      typeof limitRaw === 'string' || typeof limitRaw === 'number'
-        ? Math.max(1, Number(limitRaw))
-        : 10;
-
-    const skip = (page - 1) * limit;
-
     const qb = this.customerRepository
       .createQueryBuilder('customer')
-      .orderBy('customer.createdAt', 'DESC')
-      .skip(skip)
-      .take(limit);
+      .orderBy('customer.createdAt', 'DESC');
 
     if (nationalId) {
       qb.andWhere('customer.nationalId ILIKE :nationalId', {
@@ -75,6 +61,25 @@ export class CustomersService {
       });
     }
 
+    return qb;
+  }
+
+  async findAll(query: Record<string, unknown>) {
+    const pageRaw = query.page;
+    const limitRaw = query.limit;
+    const page =
+      typeof pageRaw === 'string' || typeof pageRaw === 'number'
+        ? Math.max(1, Number(pageRaw))
+        : 1;
+    const limit =
+      typeof limitRaw === 'string' || typeof limitRaw === 'number'
+        ? Math.max(1, Number(limitRaw))
+        : 10;
+
+    const skip = (page - 1) * limit;
+
+    const qb = this.buildCustomersQuery(query).skip(skip).take(limit);
+
     const [customers, total] = await qb.getManyAndCount();
 
     return {
@@ -84,6 +89,62 @@ export class CustomersService {
       limit,
       totalPages: Math.ceil(total / limit),
     };
+  }
+
+  async exportCustomersExcel(query: Record<string, unknown>): Promise<Buffer> {
+    const customers = await this.buildCustomersQuery(query).getMany();
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Raffles Admin';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Clientes');
+    worksheet.columns = [
+      { header: 'Fecha Registro', key: 'createdAt', width: 18 },
+      { header: 'Cedula', key: 'nationalId', width: 18 },
+      { header: 'Nombre', key: 'fullName', width: 30 },
+      { header: 'Email', key: 'email', width: 32 },
+      { header: 'Telefono', key: 'phone', width: 18 },
+      { header: 'Estado', key: 'status', width: 14 },
+      { header: 'Motivo Bloqueo', key: 'blacklistReason', width: 30 },
+      { header: 'Fecha Bloqueo', key: 'blacklistedAt', width: 18 },
+      { header: 'Estado', key: 'state', width: 20 },
+      { header: 'Ciudad', key: 'city', width: 20 },
+      { header: 'Direccion', key: 'address', width: 36 },
+      { header: 'ZIP', key: 'zip', width: 12 },
+    ];
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' },
+    };
+
+    customers.forEach((customer) => {
+      const location =
+        (customer.location as Record<string, string> | null) ?? {};
+      worksheet.addRow({
+        createdAt: customer.createdAt
+          ? new Date(customer.createdAt).toLocaleDateString('es-VE')
+          : '-',
+        nationalId: customer.nationalId,
+        fullName: customer.fullName,
+        email: customer.email,
+        phone: customer.phone ?? '-',
+        status: customer.isBlacklisted ? 'Bloqueado' : 'Activo',
+        blacklistReason: customer.blacklistReason ?? '-',
+        blacklistedAt: customer.blacklistedAt
+          ? new Date(customer.blacklistedAt).toLocaleDateString('es-VE')
+          : '-',
+        state: location.state ?? '-',
+        city: location.city ?? '-',
+        address: location.address ?? '-',
+        zip: location.zip ?? '-',
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
   }
 
   async findOne(uid: string) {
@@ -126,7 +187,10 @@ export class CustomersService {
     });
 
     // Group purchases by raffleId
-    const rafflesMap = new Map<string, { raffle: Raffle; purchases: Purchase[] }>();
+    const rafflesMap = new Map<
+      string,
+      { raffle: Raffle; purchases: Purchase[] }
+    >();
 
     for (const purchase of purchases) {
       const raffleId = purchase.raffleId;
@@ -136,17 +200,18 @@ export class CustomersService {
           purchases: [],
         });
       }
-      rafflesMap.get(raffleId)!.purchases.push(purchase);
+      rafflesMap.get(raffleId).purchases.push(purchase);
     }
 
     // Get all tickets for this customer's purchases, grouped by raffle
     const purchaseIds = purchases.map((p) => p.uid);
-    const tickets = purchaseIds.length > 0
-      ? await this.ticketRepository.find({
-          where: { purchaseId: In(purchaseIds) },
-          order: { ticketNumber: 'ASC' },
-        })
-      : [];
+    const tickets =
+      purchaseIds.length > 0
+        ? await this.ticketRepository.find({
+            where: { purchaseId: In(purchaseIds) },
+            order: { ticketNumber: 'ASC' },
+          })
+        : [];
 
     // Group tickets by purchaseId, then by raffleId
     const ticketsByPurchase = new Map<string, Ticket[]>();
@@ -155,11 +220,13 @@ export class CustomersService {
       if (!ticketsByPurchase.has(ticket.purchaseId)) {
         ticketsByPurchase.set(ticket.purchaseId, []);
       }
-      ticketsByPurchase.get(ticket.purchaseId)!.push(ticket);
+      ticketsByPurchase.get(ticket.purchaseId).push(ticket);
     }
 
     // Get CDN URLs for all unique raffle images
-    const uniqueRaffles = Array.from(rafflesMap.values()).map(({ raffle }) => raffle);
+    const uniqueRaffles = Array.from(rafflesMap.values()).map(
+      ({ raffle }) => raffle,
+    );
     const raffleImageUrls = uniqueRaffles.map((raffle) => ({
       raffleId: raffle.uid,
       imageUrl: this.s3Service.getCdnUrl(raffle.imageUrl) ?? raffle.imageUrl,
@@ -169,58 +236,61 @@ export class CustomersService {
     );
 
     // Build response structure
-    const rafflesData = Array.from(rafflesMap.values()).map(({ raffle, purchases: rafflePurchases }) => {
-      // Get all tickets for purchases in this raffle
-      const raffleTickets = rafflePurchases.flatMap((purchase) => {
-        const purchaseTickets = ticketsByPurchase.get(purchase.uid) || [];
-        // Also include tickets from ticketNumbers array if they exist
-        const ticketNumbers = purchase.ticketNumbers || [];
-        const ticketsFromArray = ticketNumbers.map((ticketNumber) => {
-          // Find if there's already a ticket entity for this number
-          const existingTicket = purchaseTickets.find(
-            (t) => t.ticketNumber === ticketNumber && t.raffleId === raffle.uid,
+    const rafflesData = Array.from(rafflesMap.values()).map(
+      ({ raffle, purchases: rafflePurchases }) => {
+        // Get all tickets for purchases in this raffle
+        const raffleTickets = rafflePurchases.flatMap((purchase) => {
+          const purchaseTickets = ticketsByPurchase.get(purchase.uid) || [];
+          // Also include tickets from ticketNumbers array if they exist
+          const ticketNumbers = purchase.ticketNumbers || [];
+          const ticketsFromArray = ticketNumbers.map((ticketNumber) => {
+            // Find if there's already a ticket entity for this number
+            const existingTicket = purchaseTickets.find(
+              (t) =>
+                t.ticketNumber === ticketNumber && t.raffleId === raffle.uid,
+            );
+            if (existingTicket) {
+              return existingTicket;
+            }
+            // Otherwise create a virtual ticket object
+            return {
+              uid: `${purchase.uid}-${ticketNumber}`,
+              ticketNumber,
+              raffleId: raffle.uid,
+              purchaseId: purchase.uid,
+              assignedAt: purchase.verifiedAt || purchase.submittedAt,
+            };
+          });
+          // Merge and deduplicate
+          const allTickets = [...purchaseTickets, ...ticketsFromArray];
+          const uniqueTickets = Array.from(
+            new Map(allTickets.map((t) => [t.ticketNumber, t])).values(),
           );
-          if (existingTicket) {
-            return existingTicket;
-          }
-          // Otherwise create a virtual ticket object
-          return {
-            uid: `${purchase.uid}-${ticketNumber}`,
-            ticketNumber,
-            raffleId: raffle.uid,
-            purchaseId: purchase.uid,
-            assignedAt: purchase.verifiedAt || purchase.submittedAt,
-          };
+          return uniqueTickets;
         });
-        // Merge and deduplicate
-        const allTickets = [...purchaseTickets, ...ticketsFromArray];
-        const uniqueTickets = Array.from(
-          new Map(allTickets.map((t) => [t.ticketNumber, t])).values(),
-        );
-        return uniqueTickets;
-      });
 
-      return {
-        raffle: {
-          uid: raffle.uid,
-          title: raffle.title,
-          description: raffle.description,
-          ticketPrice: raffle.ticketPrice,
-          totalTickets: raffle.totalTickets,
-          deadline: raffle.deadline,
-          status: raffle.status,
-          imageUrl: imageUrlMap.get(raffle.uid) ?? raffle.imageUrl,
-          createdAt: raffle.createdAt,
-        },
-        tickets: raffleTickets.map((t) => ({
-          uid: t.uid,
-          ticketNumber: t.ticketNumber,
-          assignedAt: t.assignedAt,
-          purchaseId: t.purchaseId,
-        })),
-        purchaseCount: rafflePurchases.length,
-      };
-    });
+        return {
+          raffle: {
+            uid: raffle.uid,
+            title: raffle.title,
+            description: raffle.description,
+            ticketPrice: raffle.ticketPrice,
+            totalTickets: raffle.totalTickets,
+            deadline: raffle.deadline,
+            status: raffle.status,
+            imageUrl: imageUrlMap.get(raffle.uid) ?? raffle.imageUrl,
+            createdAt: raffle.createdAt,
+          },
+          tickets: raffleTickets.map((t) => ({
+            uid: t.uid,
+            ticketNumber: t.ticketNumber,
+            assignedAt: t.assignedAt,
+            purchaseId: t.purchaseId,
+          })),
+          purchaseCount: rafflePurchases.length,
+        };
+      },
+    );
 
     return {
       ...customer,

@@ -12,7 +12,5 @@ import { ApiConsumes } from '@nestjs/swagger';
  * @param required - Whether the file is required
  */
 export function ApiFile(fieldName: string = 'file', required: boolean = false) {
-  return applyDecorators(
-    ApiConsumes('multipart/form-data'),
-  );
+  return applyDecorators(ApiConsumes('multipart/form-data'));
 }

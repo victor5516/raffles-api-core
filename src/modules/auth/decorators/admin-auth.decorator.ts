@@ -22,10 +22,12 @@ import { RolesGuard } from '../guards/roles.guard';
  * // VERIFIER or SUPER_ADMIN can access
  * @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
  */
-export function Auth(...roles: AdminRole[] | AdminRole[][]): ReturnType<typeof applyDecorators> {
+export function Auth(
+  ...roles: AdminRole[] | AdminRole[][]
+): ReturnType<typeof applyDecorators> {
   // Handle case where an array is passed: @Auth([AdminRole.VERIFIER, AdminRole.SUPER_ADMIN])
   if (roles.length === 1 && Array.isArray(roles[0])) {
-    const roleArray = roles[0] as AdminRole[];
+    const roleArray = roles[0];
     if (roleArray.length === 0) {
       return applyDecorators(UseGuards(AuthGuard('jwt')));
     }

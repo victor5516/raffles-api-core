@@ -30,17 +30,17 @@ export class SqsService {
     messageId: string | undefined;
   }> {
     try {
-    const res = await this.client.send(
-      new SendMessageCommand({
-        QueueUrl: this.purchasesQueueUrl,
-        MessageBody: JSON.stringify(purchase),
-      }),
-    );
-
-    if (!res.MessageId) {
-      this.logger.warn(
-        'SQS message sent but no MessageId returned by AWS SDK.',
+      const res = await this.client.send(
+        new SendMessageCommand({
+          QueueUrl: this.purchasesQueueUrl,
+          MessageBody: JSON.stringify(purchase),
+        }),
       );
+
+      if (!res.MessageId) {
+        this.logger.warn(
+          'SQS message sent but no MessageId returned by AWS SDK.',
+        );
       }
       console.log('Message sent to SQS successfully:', res.MessageId);
       console.log('Message body:', purchase);

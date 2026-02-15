@@ -1,4 +1,10 @@
-import { IsEmail, MinLength, IsEnum, IsOptional, IsNotEmpty } from 'class-validator';
+import {
+  IsEmail,
+  MinLength,
+  IsEnum,
+  IsOptional,
+  IsNotEmpty,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { AdminRole } from '../enums/admin-role.enum';
 
@@ -13,7 +19,8 @@ export class UpdateAdminDto {
   email?: string;
 
   @ApiProperty({
-    description: 'Contraseña del administrador (opcional, solo si se desea cambiar)',
+    description:
+      'Contraseña del administrador (opcional, solo si se desea cambiar)',
     example: 'newpassword123',
     minLength: 6,
     required: false,

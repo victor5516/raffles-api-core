@@ -33,8 +33,11 @@ import { MailService } from './mail.service';
           },
         } as any);
 
-        const brandName = configService.get<string>('MAIL_BRAND_NAME') || 'Rifas';
-        const mailFrom = configService.get<string>('MAIL_FROM') || `"${brandName}" <no-reply@simonboli.com>`;
+        const brandName =
+          configService.get<string>('MAIL_BRAND_NAME') || 'Rifas';
+        const mailFrom =
+          configService.get<string>('MAIL_FROM') ||
+          `"${brandName}" <no-reply@simonboli.com>`;
 
         return {
           transport: transporter,

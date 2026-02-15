@@ -28,7 +28,8 @@ export class CreatePaymentMethodDto {
   accountHolderName?: string;
 
   @ApiPropertyOptional({
-    description: 'URL de la imagen del método de pago (se puede subir archivo o proporcionar URL)',
+    description:
+      'URL de la imagen del método de pago (se puede subir archivo o proporcionar URL)',
     example: 'https://example.com/payment-method.jpg',
   })
   @IsOptional()
@@ -57,7 +58,9 @@ export class CreatePaymentMethodDto {
     example: 1,
   })
   @IsOptional()
-  @Transform(({ value }) => (value !== undefined ? parseInt(String(value), 10) : undefined))
+  @Transform(({ value }) =>
+    value !== undefined ? parseInt(String(value), 10) : undefined,
+  )
   @IsNumber()
   @Min(0)
   order?: number;
@@ -72,7 +75,8 @@ export class CreatePaymentMethodDto {
   currency_id: string;
 
   @ApiPropertyOptional({
-    description: 'Si la verificación por IA está habilitada para este método de pago',
+    description:
+      'Si la verificación por IA está habilitada para este método de pago',
     example: true,
   })
   @IsOptional()

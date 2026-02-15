@@ -6,7 +6,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Raffle } from './entities/raffle.entity';
-import { Purchase, PurchaseStatus } from '../purchases/entities/purchase.entity';
+import {
+  Purchase,
+  PurchaseStatus,
+} from '../purchases/entities/purchase.entity';
 import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { UpdateRaffleDto } from './dto/update-raffle.dto';
 import { S3Service } from '../../common/s3/s3.service';
@@ -182,7 +185,7 @@ export class RafflesService {
     ]);
 
     const soldByRaffle = new Map<string, number>(
-      soldByRaffleRaw.map((r) => [r.raffleId, Number(r.ticketsSold ?? 0)])
+      soldByRaffleRaw.map((r) => [r.raffleId, Number(r.ticketsSold ?? 0)]),
     );
 
     for (const raffle of raffles) {
@@ -192,7 +195,7 @@ export class RafflesService {
 
     // 2. Procesar en paralelo usando una función helper
     return Promise.all(
-      raffles.map((raffle) => this.transformRaffle(raffle, currencies))
+      raffles.map((raffle) => this.transformRaffle(raffle, currencies)),
     );
   }
 
@@ -227,8 +230,7 @@ export class RafflesService {
 
     return {
       ...raffle,
-      imageUrl:
-        this.s3Service.getCdnUrl(raffle.imageUrl) ?? raffle.imageUrl,
+      imageUrl: this.s3Service.getCdnUrl(raffle.imageUrl) ?? raffle.imageUrl,
       gallery: galleryUrls,
       galleryKeys: raffle.gallery ?? [],
       prices: this.calculatePrices(raffle.ticketPrice, currencies),
@@ -251,7 +253,8 @@ export class RafflesService {
     if (updateRaffleDto.total_tickets)
       updateData.totalTickets = updateRaffleDto.total_tickets;
     if (updateRaffleDto.min_tickets_per_purchase !== undefined)
-      updateData.minTicketsPerPurchase = updateRaffleDto.min_tickets_per_purchase;
+      updateData.minTicketsPerPurchase =
+        updateRaffleDto.min_tickets_per_purchase;
     if (updateRaffleDto.image_url)
       updateData.imageUrl = updateRaffleDto.image_url;
     if (updateRaffleDto.gallery !== undefined)
@@ -287,9 +290,8 @@ export class RafflesService {
       imageUrl: raffle.imageUrl ? `${cdnUrl}/${raffle.imageUrl}` : null, // Fallback si falla S3
       gallery: raffle.gallery?.map((key) => `${cdnUrl}/${key}`) ?? [],
       tickets_sold: ticketsSold,
-      percentage_sold: raffle.totalTickets > 0
-        ? (ticketsSold / raffle.totalTickets) * 100
-        : 0,
+      percentage_sold:
+        raffle.totalTickets > 0 ? (ticketsSold / raffle.totalTickets) * 100 : 0,
       prices: this.calculatePrices(raffle.ticketPrice, currencies),
     };
   }

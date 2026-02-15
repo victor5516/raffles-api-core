@@ -40,7 +40,9 @@ export enum VerificationSource {
 }
 
 @Entity('purchase')
-@Index('purchase_raffle_tickets_gin_idx', ['raffleId', 'ticketNumbers'], { using: 'gin' } as any)
+@Index('purchase_raffle_tickets_gin_idx', ['raffleId', 'ticketNumbers'], {
+  using: 'gin',
+} as any)
 export class Purchase {
   @PrimaryGeneratedColumn('uuid')
   uid: string;

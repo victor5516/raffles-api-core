@@ -23,5 +23,4 @@ export class Currency {
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
-
 }

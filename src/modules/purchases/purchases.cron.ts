@@ -78,7 +78,9 @@ export class PurchasesCron {
       return { purchases: 0, rows: 0, sheets: 0 };
     }
 
-    const spreadsheetId = this.configService.get<string>('GOOGLE_SPREADSHEET_ID');
+    const spreadsheetId = this.configService.get<string>(
+      'GOOGLE_SPREADSHEET_ID',
+    );
     if (!spreadsheetId) {
       this.logger.warn('GOOGLE_SPREADSHEET_ID not set, skipping export');
       return { purchases: 0, rows: 0, sheets: 0 };

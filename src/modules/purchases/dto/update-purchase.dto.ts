@@ -90,7 +90,8 @@ export class UpdatePurchaseDto {
   customerId?: string;
 
   @ApiPropertyOptional({
-    description: 'Datos del cliente para actualizar o crear inline (prioridad sobre customerId)',
+    description:
+      'Datos del cliente para actualizar o crear inline (prioridad sobre customerId)',
     type: CustomerDto,
   })
   @Transform(({ value }) => {
@@ -115,7 +116,11 @@ export class UpdatePurchaseDto {
     minimum: 1,
   })
   @IsOptional()
-  @Transform(({ value }) => (value !== undefined && value !== '' ? parseInt(String(value), 10) : undefined))
+  @Transform(({ value }) =>
+    value !== undefined && value !== ''
+      ? parseInt(String(value), 10)
+      : undefined,
+  )
   @IsInt()
   @Min(1)
   ticket_quantity?: number;
@@ -144,13 +149,16 @@ export class UpdatePurchaseDto {
     minimum: 0,
   })
   @IsOptional()
-  @Transform(({ value }) => (value !== undefined && value !== '' ? parseFloat(String(value)) : undefined))
+  @Transform(({ value }) =>
+    value !== undefined && value !== '' ? parseFloat(String(value)) : undefined,
+  )
   @IsNumber()
   @Min(0)
   totalAmount?: number;
 
   @ApiPropertyOptional({
-    description: 'URL o key del comprobante de pago (alternativa a subir archivo)',
+    description:
+      'URL o key del comprobante de pago (alternativa a subir archivo)',
     example: 'https://example.com/screenshot.jpg',
   })
   @IsOptional()
@@ -158,7 +166,8 @@ export class UpdatePurchaseDto {
   payment_screenshot_url?: string;
 
   @ApiPropertyOptional({
-    description: 'Números de tickets asignados (reemplaza la lista actual; se valida rango y disponibilidad)',
+    description:
+      'Números de tickets asignados (reemplaza la lista actual; se valida rango y disponibilidad)',
     example: [1, 5, 10, 15, 20],
     type: [Number],
     isArray: true,
