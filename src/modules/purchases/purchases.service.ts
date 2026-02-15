@@ -439,7 +439,10 @@ export class PurchasesService {
       });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
-      if (effectiveDto.raffleId !== undefined) {
+      if (
+        effectiveDto.raffleId !== undefined &&
+        effectiveDto.raffleId !== purchase.raffleId
+      ) {
         const raffle = await manager.findOne(Raffle, {
           where: { uid: effectiveDto.raffleId },
         });

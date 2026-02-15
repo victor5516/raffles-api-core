@@ -105,6 +105,18 @@ export class GoogleSheetsService implements OnModuleInit {
     return response.data.values ?? [];
   }
 
+  async getSheetNames(spreadsheetId: string): Promise<string[]> {
+    const sheets = this.getClient();
+    const response = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets(properties(title))',
+    });
+
+    return (response.data.sheets ?? [])
+      .map((sheet) => String(sheet.properties?.title ?? '').trim())
+      .filter((title) => title.length > 0);
+  }
+
   async syncRowsByUid(
     spreadsheetId: string,
     sheetName: string,

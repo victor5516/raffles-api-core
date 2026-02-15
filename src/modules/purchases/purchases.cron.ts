@@ -133,6 +133,16 @@ export class PurchasesCron {
         purchases,
         sheetNameByPaymentMethodId,
       );
+
+      if (!fullRebuild) {
+        await this.clearStaleRowsAcrossCandidateSheets(
+          spreadsheetId,
+          purchases,
+          byPaymentMethod,
+          sheetNameByPaymentMethodId,
+        );
+      }
+
       const syncedPurchaseIds = new Set<string>();
       let syncedSheets = 0;
       let totalRows = 0;
@@ -323,5 +333,107 @@ export class PurchasesCron {
       map.set(method.uid, method.sheetName ?? method.name);
     }
     return map;
+  }
+
+  private async clearStaleRowsAcrossCandidateSheets(
+    spreadsheetId: string,
+    purchases: Purchase[],
+    byPaymentMethod: Map<string, SheetSyncRow[]>,
+    sheetNameByPaymentMethodId: Map<string, string>,
+  ): Promise<void> {
+    const existingSheetNames = await this.googleSheetsService.getSheetNames(
+      spreadsheetId,
+    );
+    if (existingSheetNames.length === 0) {
+      return;
+    }
+
+    const candidateSheetNames = await this.buildCleanupCandidateSheetNames(
+      purchases,
+      byPaymentMethod,
+      sheetNameByPaymentMethodId,
+    );
+    const existingSet = new Set(existingSheetNames.map((name) => name.trim()));
+    const targetSheetNames = Array.from(candidateSheetNames).filter((name) =>
+      existingSet.has(name.trim()),
+    );
+
+    if (targetSheetNames.length === 0) {
+      return;
+    }
+
+    const clearRows: SheetSyncRow[] = Array.from(
+      new Set(purchases.map((p) => String(p.uid).trim()).filter(Boolean)),
+    ).map((uid) => ({ uid, values: [] }));
+
+    if (clearRows.length === 0) {
+      return;
+    }
+
+    let clearedSheets = 0;
+    for (const sheetName of targetSheetNames) {
+      try {
+        await this.googleSheetsService.syncRowsByUid(
+          spreadsheetId,
+          sheetName,
+          clearRows,
+          SHEET_HEADERS,
+        );
+        clearedSheets += 1;
+      } catch (err) {
+        this.logger.warn(
+          `Failed clearing stale rows on sheet "${sheetName}"`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+
+    if (clearedSheets > 0) {
+      this.logger.log(
+        `Cleared stale rows for ${clearRows.length} purchases across ${clearedSheets} sheets before sync`,
+      );
+    }
+  }
+
+  private async buildCleanupCandidateSheetNames(
+    purchases: Purchase[],
+    byPaymentMethod: Map<string, SheetSyncRow[]>,
+    sheetNameByPaymentMethodId: Map<string, string>,
+  ): Promise<Set<string>> {
+    const candidateSheetNames = new Set<string>();
+
+    for (const sheetName of byPaymentMethod.keys()) {
+      candidateSheetNames.add(sheetName);
+    }
+
+    for (const p of purchases) {
+      candidateSheetNames.add(
+        toSheetName(p.paymentMethod?.sheetName ?? p.paymentMethod?.name ?? 'Unknown'),
+      );
+
+      for (const pay of p.payments ?? []) {
+        candidateSheetNames.add(
+          resolveSheetName(pay, p, sheetNameByPaymentMethodId),
+        );
+        if (pay.paymentMethodName) {
+          candidateSheetNames.add(toSheetName(pay.paymentMethodName));
+        }
+        if (pay.currency) {
+          candidateSheetNames.add(toSheetName(pay.currency));
+        }
+      }
+    }
+
+    const allPaymentMethods = await this.paymentMethodRepository.find();
+    for (const method of allPaymentMethods) {
+      candidateSheetNames.add(toSheetName(method.sheetName ?? method.name));
+      candidateSheetNames.add(toSheetName(method.name));
+      const currencySymbol = method.currency?.symbol;
+      if (currencySymbol) {
+        candidateSheetNames.add(toSheetName(currencySymbol));
+      }
+    }
+
+    return candidateSheetNames;
   }
 }
