@@ -5,6 +5,8 @@ import { Purchase, PurchaseStatus } from '../purchases/entities/purchase.entity'
 import { Raffle, RaffleStatus } from '../raffles/entities/raffle.entity';
 import { S3Service } from '../../common/s3/s3.service';
 
+const PG_INT4_MAX = 2147483647;
+
 @Injectable()
 export class TicketsService {
   constructor(
@@ -176,7 +178,13 @@ export class TicketsService {
   }
 
   async findByTicketNumber(ticketNumber: number) {
-    if (ticketNumber == null || Number.isNaN(ticketNumber)) {
+    if (
+      ticketNumber == null ||
+      Number.isNaN(ticketNumber) ||
+      !Number.isInteger(ticketNumber) ||
+      ticketNumber < 1 ||
+      ticketNumber > PG_INT4_MAX
+    ) {
       return { raffles: [] };
     }
 
