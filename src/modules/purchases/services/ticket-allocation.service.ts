@@ -100,13 +100,18 @@ export class TicketAllocationService {
     raffle: Raffle,
     quantity: number,
   ): Promise<void> {
-    // Count ALL tickets currently occupied (Verified or Pending)
+    // Count ALL tickets currently occupied (Pending, Verified, or Manual Review)
     const result = await manager.query(
       `SELECT SUM(ticket_quantity) as total
          FROM purchase
          WHERE raffle_id = $1
-         AND status IN ($2, $3)`,
-      [raffle.uid, PurchaseStatus.PENDING, PurchaseStatus.VERIFIED],
+         AND status IN ($2, $3, $4)`,
+      [
+        raffle.uid,
+        PurchaseStatus.PENDING,
+        PurchaseStatus.VERIFIED,
+        PurchaseStatus.MANUAL_REVIEW,
+      ],
     );
 
     const occupied = parseInt(result[0]?.total || '0', 10);
@@ -119,7 +124,7 @@ export class TicketAllocationService {
 
   /**
    * Helper to count how many of the requested numbers are already taken.
-   * Checks PENDING and VERIFIED statuses.
+   * Checks PENDING, VERIFIED, and MANUAL_REVIEW statuses.
    * @param excludePurchaseId - When provided (e.g. on update), excludes this purchase from the count.
    */
   async countOccupied(
@@ -132,17 +137,18 @@ export class TicketAllocationService {
       raffleId,
       PurchaseStatus.PENDING,
       PurchaseStatus.VERIFIED,
+      PurchaseStatus.MANUAL_REVIEW,
       numbersToCheck,
     ];
-    const excludeClause = excludePurchaseId ? ' AND purchase.uid != $5' : '';
+    const excludeClause = excludePurchaseId ? ' AND purchase.uid != $6' : '';
     if (excludePurchaseId) params.push(excludePurchaseId);
 
     const result = await manager.query(
       `SELECT COUNT(*) as count
        FROM purchase, unnest(ticket_numbers) as t_num
        WHERE purchase.raffle_id = $1
-       AND purchase.status IN ($2, $3)
-       AND t_num = ANY($4)${excludeClause}`,
+       AND purchase.status IN ($2, $3, $4)
+       AND t_num = ANY($5)${excludeClause}`,
       params,
     );
     return parseInt(result[0]?.count || '0', 10);
@@ -172,12 +178,13 @@ export class TicketAllocationService {
       `SELECT unnest("ticket_numbers") as num FROM purchase
        WHERE "raffle_id" = $1
        AND "ticket_numbers" IS NOT NULL
-       AND "status" IN ($2, $3)
-       AND uid != $4`,
+       AND "status" IN ($2, $3, $4)
+       AND uid != $5`,
       [
         raffle.uid,
         PurchaseStatus.PENDING,
         PurchaseStatus.VERIFIED,
+        PurchaseStatus.MANUAL_REVIEW,
         purchase.uid,
       ],
     );
