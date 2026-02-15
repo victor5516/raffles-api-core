@@ -17,6 +17,9 @@ export class PaymentMethod {
   @Column({ unique: true })
   name: string;
 
+  @Column({ name: 'sheet_name', nullable: true })
+  sheetName: string;
+
   @Column({ name: 'account_holder_name', nullable: true })
   accountHolderName: string;
 

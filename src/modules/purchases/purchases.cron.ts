@@ -3,7 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Purchase, PurchaseStatus } from './entities/purchase.entity';
+import {
+  PaymentEntry,
+  Purchase,
+  PurchaseStatus,
+} from './entities/purchase.entity';
+import { PaymentMethod } from '../payments/entities/payment-method.entity';
 import { GoogleSheetsService } from '../../common/services/google-sheets.service';
 import { formatDateVenezuela } from '../../common/utils/date.util';
 
@@ -43,6 +48,28 @@ function toSheetName(name: string): string {
     .replace(/[*?:/\\[\]]/g, '-');
 }
 
+/** Resolve target sheet name using payment-level data first (multi-method purchases). */
+function resolveSheetName(
+  pay: PaymentEntry | undefined,
+  purchase: Purchase,
+  sheetNameByPaymentMethodId: Map<string, string>,
+): string {
+  const paymentMethodId = String(pay?.paymentMethodId ?? '').trim();
+  const stableSheetName =
+    paymentMethodId && sheetNameByPaymentMethodId.has(paymentMethodId)
+      ? sheetNameByPaymentMethodId.get(paymentMethodId)
+      : undefined;
+
+  return toSheetName(
+    stableSheetName ??
+      pay?.paymentMethodName ??
+      pay?.currency ??
+      purchase.paymentMethod?.sheetName ??
+      purchase.paymentMethod?.name ??
+      'Unknown',
+  );
+}
+
 @Injectable()
 export class PurchasesCron {
   private readonly logger = new Logger(PurchasesCron.name);
@@ -51,11 +78,13 @@ export class PurchasesCron {
   constructor(
     @InjectRepository(Purchase)
     private readonly purchaseRepository: Repository<Purchase>,
+    @InjectRepository(PaymentMethod)
+    private readonly paymentMethodRepository: Repository<PaymentMethod>,
     private readonly googleSheetsService: GoogleSheetsService,
     private readonly configService: ConfigService,
   ) {}
 
-  @Cron(CronExpression.EVERY_10_SECONDS)
+  @Cron(CronExpression.EVERY_10_MINUTES)
   async exportPurchasesToSheets(): Promise<void> {
     await this.runExport(false);
   }
@@ -98,7 +127,12 @@ export class PurchasesCron {
         return { purchases: 0, rows: 0, sheets: 0 };
       }
 
-      const byPaymentMethod = this.buildRowsByPaymentMethod(purchases);
+      const sheetNameByPaymentMethodId =
+        await this.getSheetNameByPaymentMethodId(purchases);
+      const byPaymentMethod = this.buildRowsByPaymentMethod(
+        purchases,
+        sheetNameByPaymentMethodId,
+      );
       const syncedPurchaseIds = new Set<string>();
       let syncedSheets = 0;
       let totalRows = 0;
@@ -158,6 +192,7 @@ export class PurchasesCron {
 
   private buildRowsByPaymentMethod(
     purchases: Purchase[],
+    sheetNameByPaymentMethodId: Map<string, string>,
   ): Map<string, SheetSyncRow[]> {
     const byPaymentMethod = new Map<string, SheetSyncRow[]>();
 
@@ -172,15 +207,19 @@ export class PurchasesCron {
       ) {
         if (payments.length > 0) {
           for (const pay of payments) {
-            const sheetName = toSheetName(
-              pay.paymentMethodName ?? p.paymentMethod?.name ?? 'Unknown',
+            const sheetName = resolveSheetName(
+              pay,
+              p,
+              sheetNameByPaymentMethodId,
             );
             const rows = byPaymentMethod.get(sheetName) ?? [];
             rows.push({ uid: p.uid, values: [] });
             byPaymentMethod.set(sheetName, rows);
           }
         } else {
-          const sheetName = toSheetName(p.paymentMethod?.name ?? 'Unknown');
+          const sheetName = toSheetName(
+            p.paymentMethod?.sheetName ?? p.paymentMethod?.name ?? 'Unknown',
+          );
           const rows = byPaymentMethod.get(sheetName) ?? [];
           rows.push({ uid: p.uid, values: [] });
           byPaymentMethod.set(sheetName, rows);
@@ -202,8 +241,10 @@ export class PurchasesCron {
         // 1 fila por cada pago (abono). Tickets solo en la primera fila.
         for (let i = 0; i < payments.length; i++) {
           const pay = payments[i];
-          const sheetName = toSheetName(
-            pay.paymentMethodName ?? p.paymentMethod?.name ?? 'Unknown',
+          const sheetName = resolveSheetName(
+            pay,
+            p,
+            sheetNameByPaymentMethodId,
           );
           const values: any[] = [
             date,
@@ -225,7 +266,9 @@ export class PurchasesCron {
         }
       } else {
         // Legacy: compra sin payments[], 1 fila como antes
-        const sheetName = toSheetName(p.paymentMethod?.name ?? 'Unknown');
+        const sheetName = toSheetName(
+          p.paymentMethod?.sheetName ?? p.paymentMethod?.name ?? 'Unknown',
+        );
         const values: any[] = [
           date,
           customerName,
@@ -247,5 +290,38 @@ export class PurchasesCron {
     }
 
     return byPaymentMethod;
+  }
+
+  private async getSheetNameByPaymentMethodId(
+    purchases: Purchase[],
+  ): Promise<Map<string, string>> {
+    const ids = new Set<string>();
+
+    for (const p of purchases) {
+      if (p.paymentMethodId) {
+        ids.add(p.paymentMethodId);
+      }
+      const payments = p.payments ?? [];
+      for (const pay of payments) {
+        const paymentMethodId = String(pay.paymentMethodId ?? '').trim();
+        if (paymentMethodId) {
+          ids.add(paymentMethodId);
+        }
+      }
+    }
+
+    if (ids.size === 0) {
+      return new Map<string, string>();
+    }
+
+    const paymentMethods = await this.paymentMethodRepository.find({
+      where: { uid: In(Array.from(ids)) },
+    });
+
+    const map = new Map<string, string>();
+    for (const method of paymentMethods) {
+      map.set(method.uid, method.sheetName ?? method.name);
+    }
+    return map;
   }
 }

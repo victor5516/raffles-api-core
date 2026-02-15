@@ -51,6 +51,7 @@ export class PaymentMethodsService {
 
     const entityLike: Partial<PaymentMethod> = {
       name: createDto.name,
+      sheetName: createDto.sheet_name ?? createDto.name,
       accountHolderName: createDto.accountHolderName,
       imageUrl: imageKey,
       paymentData: createDto.payment_data as unknown,
@@ -157,6 +158,8 @@ export class PaymentMethodsService {
 
     const updateEntityLike: Partial<PaymentMethod> = {};
     if (updateDto.name) updateEntityLike.name = updateDto.name;
+    if (updateDto.sheet_name !== undefined)
+      updateEntityLike.sheetName = updateDto.sheet_name;
     if (updateDto.accountHolderName)
       updateEntityLike.accountHolderName = updateDto.accountHolderName;
     if (imageKey) updateEntityLike.imageUrl = imageKey;

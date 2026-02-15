@@ -20,6 +20,15 @@ export class CreatePaymentMethodDto {
   name: string;
 
   @ApiPropertyOptional({
+    description:
+      'Nombre de la hoja en Google Sheets (si no se envía, se usa el nombre original del método)',
+    example: 'Transferencia Bancaria',
+  })
+  @IsOptional()
+  @IsString()
+  sheet_name?: string;
+
+  @ApiPropertyOptional({
     description: 'Nombre del titular de la cuenta',
     example: 'Juan Perez',
   })
