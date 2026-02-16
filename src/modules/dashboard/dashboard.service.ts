@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -7,6 +7,7 @@ import {
 } from '../purchases/entities/purchase.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Raffle, RaffleStatus } from '../raffles/entities/raffle.entity';
+import { RaffleStatsResponseDto } from './dto/raffle-stats-response.dto';
 
 type Metric = {
   current: number;
@@ -21,6 +22,21 @@ type DashboardActiveRaffle = {
   deadline: string;
   ticketsSold: number;
   percentageSold: number;
+};
+
+type RaffleSellDuration = {
+  raffleCreatedAt: string;
+  soldUntilAt: string;
+  durationInHours: number;
+  durationInDays: number;
+} | null;
+
+type RaffleTopLocation = {
+  state: string;
+  city: string;
+  ticketsSold: number;
+  purchasesCount: number;
+  participantsCount: number;
 };
 
 @Injectable()
@@ -112,6 +128,41 @@ export class DashboardService {
     }));
   }
 
+  async getRaffleStats(raffleId: string): Promise<RaffleStatsResponseDto> {
+    const raffle = await this.raffleRepository.findOne({ where: { uid: raffleId } });
+    if (!raffle) {
+      throw new NotFoundException('Raffle not found');
+    }
+
+    const [
+      participantsCount,
+      ticketsSold,
+      amountCollected,
+      sellDuration,
+      topLocations,
+    ] = await Promise.all([
+      this.getRaffleParticipants(raffleId),
+      this.getRaffleTicketsSold(raffleId),
+      this.getRaffleCollectedAmount(raffleId),
+      this.getRaffleSellDuration(raffleId, raffle.createdAt),
+      this.getTopLocationsByRaffle(raffleId, 5),
+    ]);
+
+    const salesPercentage =
+      raffle.totalTickets > 0 ? (ticketsSold / raffle.totalTickets) * 100 : 0;
+
+    return {
+      raffleId: raffle.uid,
+      raffleTitle: raffle.title,
+      participantsCount,
+      ticketsSold,
+      salesPercentage,
+      sellDuration,
+      topLocations,
+      amountCollected,
+    };
+  }
+
   private computeChange(current: number, previous: number): Metric {
     if (!Number.isFinite(current)) current = 0;
     if (!Number.isFinite(previous)) previous = 0;
@@ -132,6 +183,118 @@ export class DashboardService {
       changePercent,
       isPositive: changePercent > 0,
     };
+  }
+
+  private async getRaffleParticipants(raffleId: string): Promise<number> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('COUNT(DISTINCT purchase.customerId)', 'count')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .getRawOne<{ count: string | number }>();
+
+    return Number(raw?.count ?? 0);
+  }
+
+  private async getRaffleTicketsSold(raffleId: string): Promise<number> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('COALESCE(SUM(purchase.ticketQuantity), 0)', 'sum')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .getRawOne<{ sum: string | number }>();
+
+    return Number(raw?.sum ?? 0);
+  }
+
+  private async getRaffleCollectedAmount(raffleId: string): Promise<number> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('COALESCE(SUM(purchase.totalPaid), 0)', 'sum')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .getRawOne<{ sum: string | number }>();
+
+    return Number(raw?.sum ?? 0);
+  }
+
+  private async getRaffleSellDuration(
+    raffleId: string,
+    raffleCreatedAt: Date,
+  ): Promise<RaffleSellDuration> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('MAX(COALESCE(purchase.verifiedAt, purchase.submittedAt))', 'soldUntilAt')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .getRawOne<{ soldUntilAt: string | Date | null }>();
+
+    const soldUntilAtValue = raw?.soldUntilAt;
+    if (!soldUntilAtValue) {
+      return null;
+    }
+
+    const soldUntilAt = new Date(soldUntilAtValue);
+    const durationMs = soldUntilAt.getTime() - raffleCreatedAt.getTime();
+    const durationInHours = durationMs > 0 ? durationMs / (1000 * 60 * 60) : 0;
+    const durationInDays = durationInHours / 24;
+
+    return {
+      raffleCreatedAt: raffleCreatedAt.toISOString(),
+      soldUntilAt: soldUntilAt.toISOString(),
+      durationInHours,
+      durationInDays,
+    };
+  }
+
+  private async getTopLocationsByRaffle(
+    raffleId: string,
+    limit = 5,
+  ): Promise<RaffleTopLocation[]> {
+    const rows = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .innerJoin('purchase.customer', 'customer')
+      .select("customer.location->>'state'", 'state')
+      .addSelect("customer.location->>'city'", 'city')
+      .addSelect('COALESCE(SUM(purchase.ticketQuantity), 0)', 'ticketsSold')
+      .addSelect('COUNT(purchase.uid)', 'purchasesCount')
+      .addSelect('COUNT(DISTINCT purchase.customerId)', 'participantsCount')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .andWhere("customer.location->>'state' IS NOT NULL")
+      .andWhere("customer.location->>'state' != ''")
+      .andWhere("customer.location->>'city' IS NOT NULL")
+      .andWhere("customer.location->>'city' != ''")
+      .groupBy("customer.location->>'state'")
+      .addGroupBy("customer.location->>'city'")
+      .orderBy('SUM(purchase.ticketQuantity)', 'DESC')
+      .addOrderBy('COUNT(purchase.uid)', 'DESC')
+      .limit(limit)
+      .getRawMany<{
+        state: string;
+        city: string;
+        ticketsSold: string | number;
+        purchasesCount: string | number;
+        participantsCount: string | number;
+      }>();
+
+    return rows.map((row) => ({
+      state: row.state,
+      city: row.city,
+      ticketsSold: Number(row.ticketsSold ?? 0),
+      purchasesCount: Number(row.purchasesCount ?? 0),
+      participantsCount: Number(row.participantsCount ?? 0),
+    }));
   }
 
   private async getRevenueMetric(args: {
