@@ -63,6 +63,13 @@ export class DashboardController {
     type: String,
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
+  @ApiQuery({
+    name: 'currencyId',
+    description:
+      'UID de la divisa para filtrar amountCollected (opcional). Si no se envía, suma todas las divisas.',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
   @ApiResponse({
     status: 200,
     description: 'Estadísticas por rifa obtenidas exitosamente',
@@ -72,7 +79,8 @@ export class DashboardController {
   @ApiResponse({ status: 404, description: 'Rifa no encontrada' })
   getRaffleStats(
     @Param('raffleId') raffleId: string,
+    @Query('currencyId') currencyId?: string,
   ): Promise<RaffleStatsResponseDto> {
-    return this.dashboardService.getRaffleStats(raffleId);
+    return this.dashboardService.getRaffleStats(raffleId, currencyId);
   }
 }

@@ -34,10 +34,11 @@ export class RaffleTopLocationDto {
   state: string;
 
   @ApiProperty({
-    description: 'Ciudad del participante',
+    description: 'Ciudad del participante (opcional, puede ser null si solo se guarda state)',
     example: 'San Cristóbal',
+    nullable: true,
   })
-  city: string;
+  city: string | null;
 
   @ApiProperty({
     description: 'Tickets vendidos en esta ubicación',
@@ -82,6 +83,20 @@ export class RaffleStatsResponseDto {
   ticketsSold: number;
 
   @ApiProperty({
+    description: 'Total de compras verificadas de la rifa',
+    example: 1180,
+  })
+  totalPurchases: number;
+
+  @ApiProperty({
+    description:
+      'Promedio de boletos por compra verificada. Null si no hay compras verificadas.',
+    example: 4.22,
+    nullable: true,
+  })
+  averageTicketsPerPurchase: number | null;
+
+  @ApiProperty({
     description: 'Porcentaje de venta de tickets',
     example: 48,
   })
@@ -102,8 +117,58 @@ export class RaffleStatsResponseDto {
   topLocations: RaffleTopLocationDto[];
 
   @ApiProperty({
+    description:
+      'Cantidad de participantes únicos con compras verificadas en la rifa que no tienen ubicación (state) guardada',
+    example: 54,
+  })
+  participantsWithoutLocation: number;
+
+  @ApiProperty({
     description: 'Monto recogido usando totalPaid (compras verificadas)',
     example: 1250.75,
   })
   amountCollected: number;
+
+  @ApiProperty({
+    description:
+      'Promedio de minutos entre ventas verificadas consecutivas. Null si hay menos de 2 ventas.',
+    example: 10,
+    nullable: true,
+  })
+  averageTimeBetweenSalesMinutes: number | null;
+
+  @ApiProperty({
+    description:
+      'Total de compras de la rifa cuya verificación inicial fue por IA',
+    example: 220,
+  })
+  aiApprovedTotal: number;
+
+  @ApiProperty({
+    description:
+      'Compras aprobadas por IA que además tienen doble check humano (auditReviewedAt)',
+    example: 180,
+  })
+  aiWithDoubleCheck: number;
+
+  @ApiProperty({
+    description:
+      'Compras aprobadas por IA que actualmente están en estado rejected',
+    example: 12,
+  })
+  aiApprovedThenRejected: number;
+
+  @ApiProperty({
+    description:
+      'Compras aprobadas por IA con doble check humano, excluyendo las que están rejected',
+    example: 168,
+  })
+  aiWithDoubleCheckEffective: number;
+
+  @ApiProperty({
+    description:
+      'Compras evaluadas por IA que no fueron aprobadas automáticamente (manual_review, duplicated o rejected)',
+    example: 42,
+  })
+  aiRejectedSales: number;
 }
