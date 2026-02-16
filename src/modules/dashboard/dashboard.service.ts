@@ -1,12 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   Purchase,
   PurchaseStatus,
+  VerificationSource,
 } from '../purchases/entities/purchase.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Raffle, RaffleStatus } from '../raffles/entities/raffle.entity';
+import { RaffleStatsResponseDto } from './dto/raffle-stats-response.dto';
 
 type Metric = {
   current: number;
@@ -21,6 +23,29 @@ type DashboardActiveRaffle = {
   deadline: string;
   ticketsSold: number;
   percentageSold: number;
+};
+
+type RaffleSellDuration = {
+  raffleCreatedAt: string;
+  soldUntilAt: string;
+  durationInHours: number;
+  durationInDays: number;
+} | null;
+
+type RaffleTopLocation = {
+  state: string;
+  city: string | null;
+  ticketsSold: number;
+  purchasesCount: number;
+  participantsCount: number;
+};
+
+type RaffleAiAuditStats = {
+  aiApprovedTotal: number;
+  aiWithDoubleCheck: number;
+  aiApprovedThenRejected: number;
+  aiWithDoubleCheckEffective: number;
+  aiRejectedSales: number;
 };
 
 @Injectable()
@@ -112,6 +137,62 @@ export class DashboardService {
     }));
   }
 
+  async getRaffleStats(
+    raffleId: string,
+    currencyId?: string,
+  ): Promise<RaffleStatsResponseDto> {
+    const raffle = await this.raffleRepository.findOne({ where: { uid: raffleId } });
+    if (!raffle) {
+      throw new NotFoundException('Raffle not found');
+    }
+
+    const [
+      participantsCount,
+      ticketsSold,
+      totalPurchases,
+      amountCollected,
+      averageTimeBetweenSalesMinutes,
+      sellDuration,
+      topLocations,
+      participantsWithoutLocation,
+      aiAuditStats,
+    ] = await Promise.all([
+      this.getRaffleParticipants(raffleId),
+      this.getRaffleTicketsSold(raffleId),
+      this.getRaffleTotalPurchases(raffleId),
+      this.getRaffleCollectedAmount(raffleId, currencyId),
+      this.getAverageTimeBetweenSalesMinutes(raffleId),
+      this.getRaffleSellDuration(raffleId, raffle.createdAt),
+      this.getTopLocationsByRaffle(raffleId, 5),
+      this.getRaffleParticipantsWithoutLocation(raffleId),
+      this.getRaffleAiAuditStats(raffleId),
+    ]);
+
+    const salesPercentage =
+      raffle.totalTickets > 0 ? (ticketsSold / raffle.totalTickets) * 100 : 0;
+
+    return {
+      raffleId: raffle.uid,
+      raffleTitle: raffle.title,
+      participantsCount,
+      ticketsSold,
+      totalPurchases,
+      averageTicketsPerPurchase:
+        totalPurchases > 0 ? Number((ticketsSold / totalPurchases).toFixed(2)) : null,
+      salesPercentage,
+      sellDuration,
+      topLocations,
+      participantsWithoutLocation,
+      amountCollected,
+      averageTimeBetweenSalesMinutes,
+      aiApprovedTotal: aiAuditStats.aiApprovedTotal,
+      aiWithDoubleCheck: aiAuditStats.aiWithDoubleCheck,
+      aiApprovedThenRejected: aiAuditStats.aiApprovedThenRejected,
+      aiWithDoubleCheckEffective: aiAuditStats.aiWithDoubleCheckEffective,
+      aiRejectedSales: aiAuditStats.aiRejectedSales,
+    };
+  }
+
   private computeChange(current: number, previous: number): Metric {
     if (!Number.isFinite(current)) current = 0;
     if (!Number.isFinite(previous)) previous = 0;
@@ -131,6 +212,265 @@ export class DashboardService {
       previous,
       changePercent,
       isPositive: changePercent > 0,
+    };
+  }
+
+  private async getRaffleParticipants(raffleId: string): Promise<number> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('COUNT(DISTINCT purchase.customerId)', 'count')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .getRawOne<{ count: string | number }>();
+
+    return Number(raw?.count ?? 0);
+  }
+
+  private async getRaffleTicketsSold(raffleId: string): Promise<number> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('COALESCE(SUM(purchase.ticketQuantity), 0)', 'sum')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .getRawOne<{ sum: string | number }>();
+
+    return Number(raw?.sum ?? 0);
+  }
+
+  private async getRaffleTotalPurchases(raffleId: string): Promise<number> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('COUNT(purchase.uid)', 'count')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .getRawOne<{ count: string | number }>();
+
+    return Number(raw?.count ?? 0);
+  }
+
+  private async getRaffleCollectedAmount(
+    raffleId: string,
+    currencyId?: string,
+  ): Promise<number> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .innerJoin('purchase.paymentMethod', 'paymentMethod')
+      .select('COALESCE(SUM(purchase.totalPaid), 0)', 'sum')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .andWhere(
+        currencyId ? 'paymentMethod.currencyId = :currencyId' : '1=1',
+        { currencyId },
+      )
+      .getRawOne<{ sum: string | number }>();
+
+    return Number(raw?.sum ?? 0);
+  }
+
+  private async getAverageTimeBetweenSalesMinutes(
+    raffleId: string,
+  ): Promise<number | null> {
+    const rows = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('COALESCE(purchase.verifiedAt, purchase.submittedAt)', 'soldAt')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .andWhere('COALESCE(purchase.verifiedAt, purchase.submittedAt) IS NOT NULL')
+      .orderBy('COALESCE(purchase.verifiedAt, purchase.submittedAt)', 'ASC')
+      .getRawMany<{ soldAt: string | Date }>();
+
+    if (rows.length < 2) {
+      return null;
+    }
+
+    let totalDiffMs = 0;
+    let intervals = 0;
+
+    for (let i = 1; i < rows.length; i++) {
+      const previous = new Date(rows[i - 1].soldAt).getTime();
+      const current = new Date(rows[i].soldAt).getTime();
+      const diff = current - previous;
+
+      if (Number.isFinite(diff) && diff >= 0) {
+        totalDiffMs += diff;
+        intervals += 1;
+      }
+    }
+
+    if (intervals === 0) {
+      return null;
+    }
+
+    const averageMinutes = totalDiffMs / intervals / (1000 * 60);
+    return Number(averageMinutes.toFixed(2));
+  }
+
+  private async getRaffleSellDuration(
+    raffleId: string,
+    raffleCreatedAt: Date,
+  ): Promise<RaffleSellDuration> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select('MAX(COALESCE(purchase.verifiedAt, purchase.submittedAt))', 'soldUntilAt')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .getRawOne<{ soldUntilAt: string | Date | null }>();
+
+    const soldUntilAtValue = raw?.soldUntilAt;
+    if (!soldUntilAtValue) {
+      return null;
+    }
+
+    const soldUntilAt = new Date(soldUntilAtValue);
+    const durationMs = soldUntilAt.getTime() - raffleCreatedAt.getTime();
+    const durationInHours = durationMs > 0 ? durationMs / (1000 * 60 * 60) : 0;
+    const durationInDays = durationInHours / 24;
+
+    return {
+      raffleCreatedAt: raffleCreatedAt.toISOString(),
+      soldUntilAt: soldUntilAt.toISOString(),
+      durationInHours,
+      durationInDays,
+    };
+  }
+
+  private async getTopLocationsByRaffle(
+    raffleId: string,
+    limit = 5,
+  ): Promise<RaffleTopLocation[]> {
+    const rows = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .innerJoin('purchase.customer', 'customer')
+      .select("customer.location->>'state'", 'state')
+      .addSelect("NULL", 'city')
+      .addSelect('COALESCE(SUM(purchase.ticketQuantity), 0)', 'ticketsSold')
+      .addSelect('COUNT(purchase.uid)', 'purchasesCount')
+      .addSelect('COUNT(DISTINCT purchase.customerId)', 'participantsCount')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .andWhere("customer.location->>'state' IS NOT NULL")
+      .andWhere("customer.location->>'state' != ''")
+      .groupBy("customer.location->>'state'")
+      .orderBy('SUM(purchase.ticketQuantity)', 'DESC')
+      .addOrderBy('COUNT(purchase.uid)', 'DESC')
+      .limit(limit)
+      .getRawMany<{
+        state: string;
+        city: string | null;
+        ticketsSold: string | number;
+        purchasesCount: string | number;
+        participantsCount: string | number;
+      }>();
+
+    return rows.map((row) => ({
+      state: row.state,
+      city: row.city,
+      ticketsSold: Number(row.ticketsSold ?? 0),
+      purchasesCount: Number(row.purchasesCount ?? 0),
+      participantsCount: Number(row.participantsCount ?? 0),
+    }));
+  }
+
+  private async getRaffleParticipantsWithoutLocation(
+    raffleId: string,
+  ): Promise<number> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .innerJoin('purchase.customer', 'customer')
+      .select('COUNT(DISTINCT purchase.customerId)', 'count')
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .andWhere('purchase.status = :status', {
+        status: PurchaseStatus.VERIFIED,
+      })
+      .andWhere(
+        "(customer.location->>'state' IS NULL OR customer.location->>'state' = '')",
+      )
+      .getRawOne<{ count: string | number }>();
+
+    return Number(raw?.count ?? 0);
+  }
+
+  private async getRaffleAiAuditStats(
+    raffleId: string,
+  ): Promise<RaffleAiAuditStats> {
+    const raw = await this.purchaseRepository
+      .createQueryBuilder('purchase')
+      .select(
+        `COUNT(*) FILTER (WHERE purchase.verificationSource = :aiSource)`,
+        'aiApprovedTotal',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (
+          WHERE purchase.verificationSource = :aiSource
+            AND purchase.auditReviewedAt IS NOT NULL
+        )`,
+        'aiWithDoubleCheck',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (
+          WHERE purchase.verificationSource = :aiSource
+            AND purchase.status = :rejectedStatus
+        )`,
+        'aiApprovedThenRejected',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (
+          WHERE purchase.verificationSource = :aiSource
+            AND purchase.auditReviewedAt IS NOT NULL
+            AND purchase.status != :rejectedStatus
+        )`,
+        'aiWithDoubleCheckEffective',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (
+          WHERE purchase.aiAnalysisResult IS NOT NULL
+            AND (
+              purchase.status = :manualReviewStatus
+              OR purchase.status = :duplicatedStatus
+              OR purchase.status = :rejectedStatus
+            )
+            AND (
+              purchase.verificationSource IS NULL
+              OR purchase.verificationSource != :aiSource
+            )
+        )`,
+        'aiRejectedSales',
+      )
+      .where('purchase.raffleId = :raffleId', { raffleId })
+      .setParameters({
+        aiSource: VerificationSource.AI,
+        rejectedStatus: PurchaseStatus.REJECTED,
+        manualReviewStatus: PurchaseStatus.MANUAL_REVIEW,
+        duplicatedStatus: PurchaseStatus.DUPLICATED,
+      })
+      .getRawOne<{
+        aiApprovedTotal: string | number;
+        aiWithDoubleCheck: string | number;
+        aiApprovedThenRejected: string | number;
+        aiWithDoubleCheckEffective: string | number;
+        aiRejectedSales: string | number;
+      }>();
+
+    return {
+      aiApprovedTotal: Number(raw?.aiApprovedTotal ?? 0),
+      aiWithDoubleCheck: Number(raw?.aiWithDoubleCheck ?? 0),
+      aiApprovedThenRejected: Number(raw?.aiApprovedThenRejected ?? 0),
+      aiWithDoubleCheckEffective: Number(raw?.aiWithDoubleCheckEffective ?? 0),
+      aiRejectedSales: Number(raw?.aiRejectedSales ?? 0),
     };
   }
 
