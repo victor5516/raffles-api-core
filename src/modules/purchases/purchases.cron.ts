@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -81,7 +80,6 @@ export class PurchasesCron {
     @InjectRepository(PaymentMethod)
     private readonly paymentMethodRepository: Repository<PaymentMethod>,
     private readonly googleSheetsService: GoogleSheetsService,
-    private readonly configService: ConfigService,
   ) {}
 
   @Cron(CronExpression.EVERY_10_MINUTES)
@@ -107,14 +105,6 @@ export class PurchasesCron {
       return { purchases: 0, rows: 0, sheets: 0 };
     }
 
-    const spreadsheetId = this.configService.get<string>(
-      'GOOGLE_SPREADSHEET_ID',
-    );
-    if (!spreadsheetId) {
-      this.logger.warn('GOOGLE_SPREADSHEET_ID not set, skipping export');
-      return { purchases: 0, rows: 0, sheets: 0 };
-    }
-
     this.isRunning = true;
     try {
       const purchases = await this.purchaseRepository.find({
@@ -127,54 +117,78 @@ export class PurchasesCron {
         return { purchases: 0, rows: 0, sheets: 0 };
       }
 
-      const sheetNameByPaymentMethodId =
-        await this.getSheetNameByPaymentMethodId(purchases);
-      const byPaymentMethod = this.buildRowsByPaymentMethod(
-        purchases,
-        sheetNameByPaymentMethodId,
+      const missingSpreadsheet = purchases.filter(
+        (p) =>
+          !p.raffle ||
+          !p.raffle.spreadsheetId ||
+          String(p.raffle.spreadsheetId).trim().length === 0,
       );
-
-      if (!fullRebuild) {
-        await this.clearStaleRowsAcrossCandidateSheets(
-          spreadsheetId,
-          purchases,
-          byPaymentMethod,
-          sheetNameByPaymentMethodId,
+      if (missingSpreadsheet.length > 0) {
+        const ids = missingSpreadsheet.map((p) => p.uid).join(', ');
+        throw new Error(
+          `Some purchases belong to raffles without spreadsheetId configured: ${ids}`,
         );
       }
 
+      const sheetNameByPaymentMethodId =
+        await this.getSheetNameByPaymentMethodId(purchases);
+
+      const purchasesBySpreadsheet = new Map<string, Purchase[]>();
+      for (const p of purchases) {
+        const raffleSpreadsheetId = String(p.raffle.spreadsheetId).trim();
+        const current = purchasesBySpreadsheet.get(raffleSpreadsheetId) ?? [];
+        current.push(p);
+        purchasesBySpreadsheet.set(raffleSpreadsheetId, current);
+      }
+
       const syncedPurchaseIds = new Set<string>();
-      let syncedSheets = 0;
+      let syncedSheetsTotal = 0;
       let totalRows = 0;
 
-      for (const [sheetName, rows] of byPaymentMethod) {
-        try {
-          if (fullRebuild) {
-            await this.googleSheetsService.replaceSheetRows(
-              spreadsheetId,
-              sheetName,
-              SHEET_HEADERS,
-              rows.map((row) => row.values),
-            );
-          } else {
-            await this.googleSheetsService.syncRowsByUid(
-              spreadsheetId,
-              sheetName,
-              rows,
-              SHEET_HEADERS,
-            );
-          }
+      for (const [spreadsheetId, spreadsheetPurchases] of purchasesBySpreadsheet) {
+        const byPaymentMethod = this.buildRowsByPaymentMethod(
+          spreadsheetPurchases,
+          sheetNameByPaymentMethodId,
+        );
 
-          for (const row of rows) {
-            syncedPurchaseIds.add(row.uid);
-          }
-          totalRows += rows.length;
-          syncedSheets += 1;
-        } catch (err) {
-          this.logger.error(
-            `Failed syncing sheet "${sheetName}"`,
-            err instanceof Error ? err.stack : String(err),
+        if (!fullRebuild) {
+          await this.clearStaleRowsAcrossCandidateSheets(
+            spreadsheetId,
+            spreadsheetPurchases,
+            byPaymentMethod,
+            sheetNameByPaymentMethodId,
           );
+        }
+
+        for (const [sheetName, rows] of byPaymentMethod) {
+          try {
+            if (fullRebuild) {
+              await this.googleSheetsService.replaceSheetRows(
+                spreadsheetId,
+                sheetName,
+                SHEET_HEADERS,
+                rows.map((row) => row.values),
+              );
+            } else {
+              await this.googleSheetsService.syncRowsByUid(
+                spreadsheetId,
+                sheetName,
+                rows,
+                SHEET_HEADERS,
+              );
+            }
+
+            for (const row of rows) {
+              syncedPurchaseIds.add(row.uid);
+            }
+            totalRows += rows.length;
+            syncedSheetsTotal += 1;
+          } catch (err) {
+            this.logger.error(
+              `Failed syncing sheet "${sheetName}" in spreadsheet "${spreadsheetId}"`,
+              err instanceof Error ? err.stack : String(err),
+            );
+          }
         }
       }
 
@@ -186,15 +200,19 @@ export class PurchasesCron {
         );
       }
       this.logger.log(
-        `${fullRebuild ? 'Rebuilt' : 'Exported'} ${ids.length} purchases (${totalRows} rows) across ${syncedSheets} sheets`,
+        `${fullRebuild ? 'Rebuilt' : 'Exported'} ${ids.length} purchases (${totalRows} rows) across ${syncedSheetsTotal} sheets in ${purchasesBySpreadsheet.size} spreadsheet(s)`,
       );
-      return { purchases: ids.length, rows: totalRows, sheets: syncedSheets };
+      return {
+        purchases: ids.length,
+        rows: totalRows,
+        sheets: syncedSheetsTotal,
+      };
     } catch (err) {
       this.logger.error(
         'Failed to export purchases to Google Sheets',
         err instanceof Error ? err.stack : String(err),
       );
-      return { purchases: 0, rows: 0, sheets: 0 };
+      throw err;
     } finally {
       this.isRunning = false;
     }

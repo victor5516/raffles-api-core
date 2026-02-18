@@ -64,6 +64,14 @@ export class CreateRaffleDto {
   ticket_price: number;
 
   @ApiProperty({
+    description: 'ID del Google Spreadsheet asociado a esta rifa',
+    example: '1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890',
+  })
+  @IsNotEmpty()
+  @IsString()
+  spreadsheet_id: string;
+
+  @ApiProperty({
     description: 'Número total de tickets disponibles',
     example: 1000,
     type: Number,

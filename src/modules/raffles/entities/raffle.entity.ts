@@ -75,6 +75,9 @@ export class Raffle {
   @Column({ name: 'external_id', nullable: true })
   externalId: string;
 
+  @Column({ name: 'spreadsheet_id' })
+  spreadsheetId: string;
+
   @Column({ name: 'promotion_strategy', nullable: true })
   promotionStrategy: string | null;
 

@@ -24,6 +24,7 @@
     "db:review-duplicated": "ts-node scripts/review-duplicated-purchases.ts",
     "db:review-manual-review": "ts-node -r tsconfig-paths/register scripts/validate-manual-review-purchases.ts",
     "db:backfill-payment-method-sheet-names": "ts-node scripts/backfill-payment-method-sheet-names.ts",
+    "sheets:rebuild": "ts-node -r tsconfig-paths/register scripts/rebuild-purchases-sheets.ts",
     "cron:purchases": "ts-node -r tsconfig-paths/register scripts/run-purchases-cron.ts",
     "typeorm": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js",
     "migration:generate": "npm run typeorm -- migration:generate src/migrations/Init -d src/config/typeorm.datasource.ts",
