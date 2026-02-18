@@ -890,6 +890,7 @@ export class PurchasesService {
               fullName: purchase.verifiedByAdmin.fullName,
             }
           : null,
+          aiAnalysisResult: purchase?.aiAnalysisResult?.data ?? null,
       };
     });
 
@@ -947,6 +948,7 @@ export class PurchasesService {
             imageUrl: paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
           }
         : purchase.paymentMethod,
+      aiAnalysisResult: purchase?.aiAnalysisResult?.data ?? null,
     };
   }
 
