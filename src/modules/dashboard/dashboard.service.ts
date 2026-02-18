@@ -8,6 +8,7 @@ import {
 } from '../purchases/entities/purchase.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Raffle, RaffleStatus } from '../raffles/entities/raffle.entity';
+import { Currency } from '../currencies/entities/currency.entity';
 import { RaffleStatsResponseDto } from './dto/raffle-stats-response.dto';
 
 type Metric = {
@@ -40,6 +41,18 @@ type RaffleTopLocation = {
   participantsCount: number;
 };
 
+type RaffleAmountByCurrency = {
+  currencyId: string;
+  currencyName: string;
+  currencySymbol: string;
+  amountCollected: number;
+};
+
+type RaffleTicketsSoldByDay = {
+  date: string;
+  ticketsSold: number;
+};
+
 type RaffleAiAuditStats = {
   aiApprovedTotal: number;
   aiWithDoubleCheck: number;
@@ -57,6 +70,8 @@ export class DashboardService {
     private readonly customerRepository: Repository<Customer>,
     @InjectRepository(Raffle)
     private readonly raffleRepository: Repository<Raffle>,
+    @InjectRepository(Currency)
+    private readonly currencyRepository: Repository<Currency>,
   ) {}
 
   async getOverview(currencyId?: string) {
@@ -137,10 +152,7 @@ export class DashboardService {
     }));
   }
 
-  async getRaffleStats(
-    raffleId: string,
-    currencyId?: string,
-  ): Promise<RaffleStatsResponseDto> {
+  async getRaffleStats(raffleId: string): Promise<RaffleStatsResponseDto> {
     const raffle = await this.raffleRepository.findOne({ where: { uid: raffleId } });
     if (!raffle) {
       throw new NotFoundException('Raffle not found');
@@ -150,7 +162,8 @@ export class DashboardService {
       participantsCount,
       ticketsSold,
       totalPurchases,
-      amountCollected,
+      amountCollectedByCurrency,
+      ticketsSoldByDay,
       averageTimeBetweenSalesMinutes,
       sellDuration,
       topLocations,
@@ -160,7 +173,8 @@ export class DashboardService {
       this.getRaffleParticipants(raffleId),
       this.getRaffleTicketsSold(raffleId),
       this.getRaffleTotalPurchases(raffleId),
-      this.getRaffleCollectedAmount(raffleId, currencyId),
+      this.getRaffleCollectedAmountByCurrency(raffleId),
+      this.getRaffleTicketsSoldByDay(raffleId),
       this.getAverageTimeBetweenSalesMinutes(raffleId),
       this.getRaffleSellDuration(raffleId, raffle.createdAt),
       this.getTopLocationsByRaffle(raffleId, 5),
@@ -170,6 +184,10 @@ export class DashboardService {
 
     const salesPercentage =
       raffle.totalTickets > 0 ? (ticketsSold / raffle.totalTickets) * 100 : 0;
+    const amountCollected = amountCollectedByCurrency.reduce(
+      (sum, row) => sum + row.amountCollected,
+      0,
+    );
 
     return {
       raffleId: raffle.uid,
@@ -184,6 +202,8 @@ export class DashboardService {
       topLocations,
       participantsWithoutLocation,
       amountCollected,
+      amountCollectedByCurrency,
+      ticketsSoldByDay,
       averageTimeBetweenSalesMinutes,
       aiApprovedTotal: aiAuditStats.aiApprovedTotal,
       aiWithDoubleCheck: aiAuditStats.aiWithDoubleCheck,
@@ -254,25 +274,80 @@ export class DashboardService {
     return Number(raw?.count ?? 0);
   }
 
-  private async getRaffleCollectedAmount(
+  private async getRaffleCollectedAmountByCurrency(
     raffleId: string,
-    currencyId?: string,
-  ): Promise<number> {
-    const raw = await this.purchaseRepository
+  ): Promise<RaffleAmountByCurrency[]> {
+    const [currencies, raw] = await Promise.all([
+      this.currencyRepository.find({
+        order: { name: 'ASC' },
+      }),
+      this.purchaseRepository
+        .createQueryBuilder('purchase')
+        .innerJoin('purchase.paymentMethod', 'paymentMethod')
+        .select('paymentMethod.currencyId', 'currencyId')
+        .addSelect('COALESCE(SUM(purchase.totalPaid), 0)', 'sum')
+        .where('purchase.raffleId = :raffleId', { raffleId })
+        .andWhere('purchase.status = :status', {
+          status: PurchaseStatus.VERIFIED,
+        })
+        .groupBy('paymentMethod.currencyId')
+        .getRawMany<{ currencyId: string; sum: string | number }>(),
+    ]);
+
+    const sumByCurrency = new Map<string, number>(
+      raw.map((row) => [row.currencyId, Number(row.sum ?? 0)]),
+    );
+
+    return currencies.map((currency) => ({
+      currencyId: currency.uid,
+      currencyName: currency.name,
+      currencySymbol: currency.symbol,
+      amountCollected: sumByCurrency.get(currency.uid) ?? 0,
+    }));
+  }
+
+  private async getRaffleTicketsSoldByDay(
+    raffleId: string,
+  ): Promise<RaffleTicketsSoldByDay[]> {
+    const rows = await this.purchaseRepository
       .createQueryBuilder('purchase')
-      .innerJoin('purchase.paymentMethod', 'paymentMethod')
-      .select('COALESCE(SUM(purchase.totalPaid), 0)', 'sum')
+      .select('purchase.submittedAt', 'submittedAt')
+      .addSelect('purchase.ticketQuantity', 'ticketQuantity')
       .where('purchase.raffleId = :raffleId', { raffleId })
       .andWhere('purchase.status = :status', {
         status: PurchaseStatus.VERIFIED,
       })
-      .andWhere(
-        currencyId ? 'paymentMethod.currencyId = :currencyId' : '1=1',
-        { currencyId },
-      )
-      .getRawOne<{ sum: string | number }>();
+      .andWhere('purchase.submittedAt IS NOT NULL')
+      .orderBy('purchase.submittedAt', 'ASC')
+      .getRawMany<{ submittedAt: string | Date; ticketQuantity: string | number }>();
 
-    return Number(raw?.sum ?? 0);
+    const dayFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Caracas',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+
+    const soldByDay = new Map<string, number>();
+
+    for (const row of rows) {
+      const dateValue = row.submittedAt;
+      if (!dateValue) continue;
+
+      const submittedAt = new Date(dateValue);
+      if (Number.isNaN(submittedAt.getTime())) continue;
+
+      const dayKey = dayFormatter.format(submittedAt); // YYYY-MM-DD (en-CA)
+      const current = soldByDay.get(dayKey) ?? 0;
+      soldByDay.set(dayKey, current + Number(row.ticketQuantity ?? 0));
+    }
+
+    return Array.from(soldByDay.entries())
+      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+      .map(([date, ticketsSold]) => ({
+        date,
+        ticketsSold,
+      }));
   }
 
   private async getAverageTimeBetweenSalesMinutes(

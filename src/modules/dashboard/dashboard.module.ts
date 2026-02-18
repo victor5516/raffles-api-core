@@ -5,9 +5,10 @@ import { DashboardService } from './dashboard.service';
 import { Purchase } from '../purchases/entities/purchase.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Raffle } from '../raffles/entities/raffle.entity';
+import { Currency } from '../currencies/entities/currency.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Purchase, Customer, Raffle])],
+  imports: [TypeOrmModule.forFeature([Purchase, Customer, Raffle, Currency])],
   controllers: [DashboardController],
   providers: [DashboardService],
 })

@@ -112,6 +112,13 @@ export class PurchasesService {
         raffle.promotionConfig ?? null,
       );
       const totalAmountToPersist = Number(calculatedTotal.toFixed(2));
+      const requestedTotalAmount = Number(createDto.totalAmount);
+      const totalDiff = Math.abs(requestedTotalAmount - totalAmountToPersist);
+      if (Number.isFinite(requestedTotalAmount) && totalDiff > 0.01) {
+        throw new BadRequestException(
+          'El monto total no coincide con el precio promocional vigente.',
+        );
+      }
 
       // 3. Validate Capacity & Reserve Tickets Strategy
       // Returns specific numbers if selected, or null if random (to be assigned later)

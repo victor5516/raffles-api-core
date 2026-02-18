@@ -59,6 +59,46 @@ export class RaffleTopLocationDto {
   participantsCount: number;
 }
 
+export class RaffleAmountByCurrencyDto {
+  @ApiProperty({
+    description: 'UID de la divisa',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  currencyId: string;
+
+  @ApiProperty({
+    description: 'Nombre de la divisa',
+    example: 'Dólar Estadounidense',
+  })
+  currencyName: string;
+
+  @ApiProperty({
+    description: 'Símbolo de la divisa',
+    example: 'USD',
+  })
+  currencySymbol: string;
+
+  @ApiProperty({
+    description: 'Monto recogido en esta divisa (compras verificadas)',
+    example: 1250.75,
+  })
+  amountCollected: number;
+}
+
+export class RaffleTicketsSoldByDayDto {
+  @ApiProperty({
+    description: 'Fecha (YYYY-MM-DD)',
+    example: '2026-02-12',
+  })
+  date: string;
+
+  @ApiProperty({
+    description: 'Cantidad de boletos vendidos en esa fecha',
+    example: 184,
+  })
+  ticketsSold: number;
+}
+
 export class RaffleStatsResponseDto {
   @ApiProperty({
     description: 'UID de la rifa',
@@ -128,6 +168,20 @@ export class RaffleStatsResponseDto {
     example: 1250.75,
   })
   amountCollected: number;
+
+  @ApiProperty({
+    description:
+      'Montos recogidos por cada divisa (compras verificadas). Se incluyen todas las divisas configuradas, aunque su monto sea 0.',
+    type: () => [RaffleAmountByCurrencyDto],
+  })
+  amountCollectedByCurrency: RaffleAmountByCurrencyDto[];
+
+  @ApiProperty({
+    description:
+      'Serie diaria de boletos vendidos (compras verificadas), útil para gráficas',
+    type: () => [RaffleTicketsSoldByDayDto],
+  })
+  ticketsSoldByDay: RaffleTicketsSoldByDayDto[];
 
   @ApiProperty({
     description:
