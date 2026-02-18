@@ -559,9 +559,13 @@ export class DashboardService {
     const [todayRaw, yesterdayRaw] = await Promise.all([
       this.purchaseRepository
         .createQueryBuilder('purchase')
+        .innerJoin('purchase.raffle', 'raffle')
         .innerJoin('purchase.paymentMethod', 'paymentMethod')
         .select('COALESCE(SUM(purchase.totalAmount), 0)', 'sum')
-        .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .where('raffle.status = :raffleStatus', {
+          raffleStatus: RaffleStatus.ACTIVE,
+        })
+        .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
         .andWhere(
           args.currencyId ? 'paymentMethod.currencyId = :currencyId' : '1=1',
           { currencyId: args.currencyId },
@@ -570,9 +574,13 @@ export class DashboardService {
         .getRawOne<{ sum: string | number }>(),
       this.purchaseRepository
         .createQueryBuilder('purchase')
+        .innerJoin('purchase.raffle', 'raffle')
         .innerJoin('purchase.paymentMethod', 'paymentMethod')
         .select('COALESCE(SUM(purchase.totalAmount), 0)', 'sum')
-        .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .where('raffle.status = :raffleStatus', {
+          raffleStatus: RaffleStatus.ACTIVE,
+        })
+        .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
         .andWhere(
           args.currencyId ? 'paymentMethod.currencyId = :currencyId' : '1=1',
           { currencyId: args.currencyId },
@@ -598,14 +606,22 @@ export class DashboardService {
     const [todayRaw, yesterdayRaw] = await Promise.all([
       this.purchaseRepository
         .createQueryBuilder('purchase')
+        .innerJoin('purchase.raffle', 'raffle')
         .select('COALESCE(SUM(purchase.ticketQuantity), 0)', 'sum')
-        .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .where('raffle.status = :raffleStatus', {
+          raffleStatus: RaffleStatus.ACTIVE,
+        })
+        .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
         // Totales acumulados: NO filtramos por "now" para evitar discrepancias de timezone/reloj.
         .getRawOne<{ sum: string | number }>(),
       this.purchaseRepository
         .createQueryBuilder('purchase')
+        .innerJoin('purchase.raffle', 'raffle')
         .select('COALESCE(SUM(purchase.ticketQuantity), 0)', 'sum')
-        .where('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .where('raffle.status = :raffleStatus', {
+          raffleStatus: RaffleStatus.ACTIVE,
+        })
+        .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
         .andWhere(
           'COALESCE(purchase.verifiedAt, purchase.submittedAt) <= :end',
           { end: args.endOfYesterday },
