@@ -1,6 +1,10 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  Logger,
+} from '@nestjs/common';
 import { InjectEntityManager } from '@nestjs/typeorm';
-import { EntityManager, Between } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { BankStatementParserService } from './bank-statement-parser.service';
 import { BankTransaction, ReconciliationResult } from '../dto/reconciliation.dto';
 import {
@@ -11,6 +15,8 @@ import {
 
 @Injectable()
 export class ReconciliationService {
+  private readonly logger = new Logger(ReconciliationService.name);
+
   constructor(
     private readonly bankParser: BankStatementParserService,
     @InjectEntityManager()
@@ -40,13 +46,12 @@ export class ReconciliationService {
     }
 
     const { minDate, maxDate } = this.getDateRange(bankTransactions);
-    const { rangeStart, rangeEnd } = this.extendRange(minDate, maxDate, 2);
 
+    // Solo filtramos por rifa y método de pago; el match es por monto y referencia
     const dbPurchases = await this.entityManager.find(Purchase, {
       where: {
         raffleId,
         paymentMethodId,
-        submittedAt: Between(rangeStart, rangeEnd),
       },
       order: {
         submittedAt: 'ASC',
@@ -62,6 +67,11 @@ export class ReconciliationService {
       purchasesToAutoVerify,
     } = this.matchTransactions(bankTransactions, dbPurchases);
 
+    // Debug: cantidad de matches (independiente del estatus verified)
+    this.logger.debug(
+      `[Reconcile] Matches: ${matched.length} | Banco sin match: ${unmatchedBank.length} | DB sin match: ${unmatchedDb.length} | Total banco: ${totalBank} | Total DB: ${totalDb} | A auto-verificar: ${purchasesToAutoVerify.length}`,
+    );
+
     // Auto-verificación de compras que hicieron match
     const now = new Date();
     const updatable = purchasesToAutoVerify.filter(
@@ -70,14 +80,25 @@ export class ReconciliationService {
         p.status === PurchaseStatus.MANUAL_REVIEW,
     );
 
+    // Compras ya verified pero sin doble check: marcar auditReviewedAt
+    const forAuditStamp = purchasesToAutoVerify.filter(
+      (p) =>
+        p.status === PurchaseStatus.VERIFIED && p.auditReviewedAt == null,
+    );
+
     for (const purchase of updatable) {
       purchase.status = PurchaseStatus.VERIFIED;
       purchase.verificationSource = VerificationSource.BY_SYSTEM;
       purchase.verifiedAt = now;
     }
 
-    if (updatable.length > 0) {
-      await this.entityManager.save(updatable);
+    for (const purchase of forAuditStamp) {
+      purchase.auditReviewedAt = now;
+    }
+
+    const toSave = [...updatable, ...forAuditStamp];
+    if (toSave.length > 0) {
+      await this.entityManager.save(toSave);
     }
 
     return {
@@ -124,20 +145,6 @@ export class ReconciliationService {
     return { minDate, maxDate };
   }
 
-  private extendRange(
-    minDate: Date,
-    maxDate: Date,
-    daysPadding: number,
-  ): { rangeStart: Date; rangeEnd: Date } {
-    const start = new Date(minDate);
-    start.setDate(start.getDate() - daysPadding);
-
-    const end = new Date(maxDate);
-    end.setDate(end.getDate() + daysPadding);
-
-    return { rangeStart: start, rangeEnd: end };
-  }
-
   private normalizeRef(value: string | null | undefined): string {
     if (!value) return '';
     const str = String(value);
@@ -148,42 +155,36 @@ export class ReconciliationService {
   }
 
   /**
-   * Checks if two normalized references match using endsWith or contains logic.
-   * For partial matching, the shorter reference must be at least 4 characters.
-   * Alineado con la lógica de PurchaseVerificationService para consistencia.
+   * Calcula la longitud del sufijo común entre dos referencias normalizadas.
+   * Ejemplo: "005101282438" y "000084731282438" comparten el sufijo "1282438" (7 chars).
    */
+  private commonSuffixLength(a: string, b: string): number {
+    let i = a.length - 1;
+    let j = b.length - 1;
+    let count = 0;
+    while (i >= 0 && j >= 0 && a[i] === b[j]) {
+      count++;
+      i--;
+      j--;
+    }
+    return count;
+  }
+
+  /**
+   * Dos referencias hacen match si comparten al menos MIN_SUFFIX_MATCH_LENGTH
+   * caracteres finales consecutivos. Esto cubre los casos donde el banco emisor
+   * y el banco receptor usan prefijos distintos pero el identificador de la
+   * transacción coincide en el sufijo.
+   * Ejemplo: ref DB="005101282438", ref banco="000084731282438" → sufijo común "1282438" (7) → match.
+   */
+  private readonly MIN_SUFFIX_MATCH_LENGTH = 7;
+
   private isReferenceMatch(
     normalizedRefA: string,
     normalizedRefB: string,
   ): boolean {
     if (!normalizedRefA || !normalizedRefB) return false;
-
-    // endsWith match
-    const endsWithMatch =
-      normalizedRefA.endsWith(normalizedRefB) ||
-      normalizedRefB.endsWith(normalizedRefA);
-
-    // contains match (shorter ref must be at least 4 chars)
-    const containsMatch =
-      normalizedRefA.includes(normalizedRefB) ||
-      normalizedRefB.includes(normalizedRefA);
-
-    const minLengthForContains = 4;
-    const shorterRef =
-      normalizedRefA.length <= normalizedRefB.length
-        ? normalizedRefA
-        : normalizedRefB;
-    const longerRef =
-      normalizedRefA.length > normalizedRefB.length
-        ? normalizedRefA
-        : normalizedRefB;
-
-    return (
-      endsWithMatch ||
-      (containsMatch &&
-        shorterRef.length >= minLengthForContains &&
-        longerRef.includes(shorterRef))
-    );
+    return this.commonSuffixLength(normalizedRefA, normalizedRefB) >= this.MIN_SUFFIX_MATCH_LENGTH;
   }
 
   /**
