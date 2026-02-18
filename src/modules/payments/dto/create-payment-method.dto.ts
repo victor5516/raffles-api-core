@@ -95,4 +95,16 @@ export class CreatePaymentMethodDto {
   })
   @IsBoolean()
   ai_verification_enabled?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Si el método de pago se muestra en el cliente',
+    example: true,
+  })
+  @IsOptional()
+  @Transform(({ obj }) => {
+    const raw = obj.is_active;
+    return raw === 'true' || raw === true;
+  })
+  @IsBoolean()
+  is_active?: boolean;
 }

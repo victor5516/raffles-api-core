@@ -59,6 +59,7 @@ export class PaymentMethodsService {
       currencyId: createDto.currency_id,
       order: createDto.order ?? 0,
       aiVerificationEnabled: createDto.ai_verification_enabled ?? true,
+      isActive: createDto.is_active ?? true,
     };
 
     return this.create(entityLike);
@@ -175,6 +176,8 @@ export class PaymentMethodsService {
     if (updateDto.ai_verification_enabled !== undefined)
       updateEntityLike.aiVerificationEnabled =
         updateDto.ai_verification_enabled;
+    if (updateDto.is_active !== undefined)
+      updateEntityLike.isActive = updateDto.is_active;
     return this.update(uid, updateEntityLike);
   }
 
