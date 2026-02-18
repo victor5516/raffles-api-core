@@ -58,6 +58,7 @@
     "class-validator": "^0.14.3",
     "exceljs": "^4.4.0",
     "googleapis": "^171.4.0",
+    "@google/generative-ai": "^0.21.0",
     "handlebars": "^4.7.8",
     "nodemailer": "^7.0.12",
     "passport": "^0.7.0",

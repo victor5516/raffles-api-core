@@ -37,6 +37,7 @@ export enum PurchaseStatus {
 export enum VerificationSource {
   AI = 'ai',
   ADMIN = 'admin',
+  BY_SYSTEM = 'by_system',
 }
 
 @Entity('purchase')

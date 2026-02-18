@@ -82,7 +82,7 @@ export class PurchasesCron {
     private readonly googleSheetsService: GoogleSheetsService,
   ) {}
 
-  @Cron(CronExpression.EVERY_10_MINUTES)
+  @Cron(CronExpression.EVERY_HOUR)
   async exportPurchasesToSheets(): Promise<void> {
     await this.runExport(false);
   }

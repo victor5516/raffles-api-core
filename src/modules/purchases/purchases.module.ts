@@ -13,6 +13,8 @@ import { PaymentMethod } from '../payments/entities/payment-method.entity';
 import { Currency } from '../currencies/entities/currency.entity';
 import { GoogleSheetsService } from '../../common/services/google-sheets.service';
 import { TicketAllocationService } from './services/ticket-allocation.service';
+import { BankStatementParserService } from './services/bank-statement-parser.service';
+import { ReconciliationService } from './services/reconciliation.service';
 // import { MailModule } from '../mail/mail.module';
 // import { PurchasesMailListener } from './listeners/purchases-mail.listener';
 
@@ -36,6 +38,8 @@ import { TicketAllocationService } from './services/ticket-allocation.service';
     GoogleSheetsService,
     PurchasesCron,
     TicketAllocationService,
+    BankStatementParserService,
+    ReconciliationService,
   ], // PurchasesMailListener removido: SES no funciona
   exports: [PurchasesService, PurchasesExportService],
 })

@@ -15,6 +15,7 @@ import {
   UnauthorizedException,
   ForbiddenException,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -49,6 +50,8 @@ import { ConfigService } from '@nestjs/config';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
 import { RaffleOrdersSummaryResponseDto } from './dto/purchases-summary.dto';
 import { PurchasesCron } from './purchases.cron';
+import { ReconciliationService } from './services/reconciliation.service';
+import { ReconciliationResult } from './dto/reconciliation.dto';
 
 @ApiTags('Purchases')
 @Controller('purchases')
@@ -58,6 +61,7 @@ export class PurchasesController {
     private readonly purchasesCron: PurchasesCron,
     private readonly configService: ConfigService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly reconciliationService: ReconciliationService,
   ) {}
 
   @Post()
@@ -596,6 +600,67 @@ export class PurchasesController {
     }
 
     return this.purchasesService.processAuditWebhook(webhook, file);
+  }
+
+  @Post('reconcile')
+  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+    }),
+  )
+  @ApiOperation({
+    summary: 'Conciliación bancaria automática',
+    description:
+      'Sube un estado de cuenta bancario (Excel/CSV/PDF/imagen), extrae las transacciones de crédito con IA y las cruza contra las compras de un método de pago.',
+  })
+  @ApiBearerAuth('JWT-auth')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+        paymentMethodId: {
+          type: 'string',
+          description: 'UID del método de pago a conciliar',
+        },
+        raffleId: {
+          type: 'string',
+          description: 'UID de la rifa para filtrar compras',
+        },
+      },
+      required: ['file', 'paymentMethodId', 'raffleId'],
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Resultado de la conciliación bancaria',
+  })
+  async reconcile(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('paymentMethodId') paymentMethodId: string,
+    @Body('raffleId') raffleId: string,
+  ): Promise<ReconciliationResult> {
+    if (!file) {
+      throw new BadRequestException('Archivo de estado de cuenta requerido');
+    }
+    if (!paymentMethodId) {
+      throw new BadRequestException('paymentMethodId es requerido');
+    }
+    if (!raffleId) {
+      throw new BadRequestException('raffleId es requerido');
+    }
+
+    return this.reconciliationService.reconcile(
+      file.buffer,
+      file.mimetype,
+      paymentMethodId,
+      raffleId,
+    );
   }
 
   @Sse('sse/stream')
