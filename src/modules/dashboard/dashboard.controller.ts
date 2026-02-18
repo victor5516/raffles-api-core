@@ -8,7 +8,8 @@ import {
   ApiParam,
 } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
-import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
+import { AdminAuth, Auth } from '../auth/decorators/admin-auth.decorator';
+import { AdminRole } from '../auth/enums/admin-role.enum';
 import { RaffleStatsResponseDto } from './dto/raffle-stats-response.dto';
 
 @ApiTags('Dashboard')
@@ -54,7 +55,7 @@ export class DashboardController {
   }
 
   @Get('raffles/:raffleId/stats')
-  @AdminAuth()
+  @Auth(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Obtener estadísticas del dashboard por rifa' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
@@ -63,24 +64,17 @@ export class DashboardController {
     type: String,
     example: '123e4567-e89b-12d3-a456-426614174000',
   })
-  @ApiQuery({
-    name: 'currencyId',
-    description:
-      'UID de la divisa para filtrar amountCollected (opcional). Si no se envía, suma todas las divisas.',
-    example: '123e4567-e89b-12d3-a456-426614174000',
-    required: false,
-  })
   @ApiResponse({
     status: 200,
     description: 'Estadísticas por rifa obtenidas exitosamente',
     type: RaffleStatsResponseDto,
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   @ApiResponse({ status: 404, description: 'Rifa no encontrada' })
   getRaffleStats(
     @Param('raffleId') raffleId: string,
-    @Query('currencyId') currencyId?: string,
   ): Promise<RaffleStatsResponseDto> {
-    return this.dashboardService.getRaffleStats(raffleId, currencyId);
+    return this.dashboardService.getRaffleStats(raffleId);
   }
 }

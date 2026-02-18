@@ -116,8 +116,13 @@ export function calculatePromotionalTotal(
   }
 
   if (strategy === PromotionStrategy.PERCENTAGE) {
-    const percentage = Number(cfg.percentage);
+    const percentage = Number(cfg.percentage ?? cfg.discount);
+    const minTickets =
+      typeof cfg.minTickets === 'number' ? cfg.minTickets : undefined;
     if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
+      return roundMoney(basePrice * quantity);
+    }
+    if (minTickets != null && quantity < minTickets) {
       return roundMoney(basePrice * quantity);
     }
     const total = quantity * basePrice * (1 - percentage / 100);

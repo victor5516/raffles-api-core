@@ -96,9 +96,7 @@ export class TicketsService {
       .innerJoin('purchase.customer', 'customer')
       .innerJoin('purchase.raffle', 'raffle')
       .where('customer.nationalId = :nationalId', { nationalId })
-      .andWhere('raffle.status IN (:...statuses)', {
-        statuses: [RaffleStatus.ACTIVE, RaffleStatus.CLOSED],
-      })
+      .andWhere('raffle.status = :status', { status: RaffleStatus.ACTIVE })
       .select([
         'purchase.uid',
         'purchase.ticketNumbers',
@@ -197,9 +195,7 @@ export class TicketsService {
     const purchases = await this.purchaseRepository
       .createQueryBuilder('purchase')
       .innerJoin('purchase.raffle', 'raffle')
-      .where('raffle.status IN (:...statuses)', {
-        statuses: [RaffleStatus.ACTIVE, RaffleStatus.CLOSED],
-      })
+      .where('raffle.status = :status', { status: RaffleStatus.ACTIVE })
       .andWhere(':ticketNumber = ANY(purchase.ticket_numbers)', {
         ticketNumber,
       })
