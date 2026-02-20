@@ -287,15 +287,6 @@ export class TicketsService {
       throw new BadRequestException('q is required');
     }
 
-    const byNationalId = await this.findByNationalId(trimmed);
-    if (byNationalId.raffles.length > 0) {
-      return byNationalId;
-    }
-
-    if (/^\d+$/.test(trimmed)) {
-      return this.findByTicketNumber(Number(trimmed));
-    }
-
-    return { raffles: [] };
+    return this.findByNationalId(trimmed);
   }
 }
