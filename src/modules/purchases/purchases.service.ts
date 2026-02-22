@@ -810,6 +810,13 @@ export class PurchasesService {
       typeof query.verificationSource === 'string'
         ? query.verificationSource
         : undefined;
+    const hasPromotionRaw = query.hasPromotion;
+    const hasPromotion =
+      hasPromotionRaw === 'true'
+        ? true
+        : hasPromotionRaw === 'false'
+          ? false
+          : undefined;
 
     const pageRaw = query.page;
     const limitRaw = query.limit;
@@ -858,6 +865,11 @@ export class PurchasesService {
       qb.andWhere('purchase.verificationSource = :verificationSource', {
         verificationSource,
       });
+    }
+    if (hasPromotion === true) {
+      qb.andWhere('purchase.promotion_snapshot IS NOT NULL');
+    } else if (hasPromotion === false) {
+      qb.andWhere('purchase.promotion_snapshot IS NULL');
     }
     if (paymentMethodId) {
       qb.andWhere('purchase.paymentMethodId = :paymentMethodId', {

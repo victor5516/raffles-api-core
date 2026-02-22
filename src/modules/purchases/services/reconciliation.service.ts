@@ -79,7 +79,7 @@ export class ReconciliationService {
     const updatable = purchasesToAutoVerify.filter(
       (p) =>
         p.status === PurchaseStatus.PENDING ||
-        p.status === PurchaseStatus.MANUAL_REVIEW,
+        p.status === PurchaseStatus.MANUAL_REVIEW
     );
 
     // Compras ya verified pero sin doble check: marcar auditReviewedAt
@@ -96,6 +96,7 @@ export class ReconciliationService {
 
     for (const purchase of forAuditStamp) {
       purchase.auditReviewedAt = now;
+      purchase.verificationSource = VerificationSource.BY_SYSTEM;
     }
 
     const toSave = [...updatable, ...forAuditStamp];

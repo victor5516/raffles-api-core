@@ -123,8 +123,7 @@ export class TicketAllocationService {
 
   /**
    * Helper to count how many of the requested numbers are already taken.
-   * Checks PENDING, VERIFIED, MANUAL_REVIEW, and DUPLICATED statuses.
-   * DUPLICATED purchases retain their ticketNumbers and must be excluded from new assignments.
+   * Checks PENDING, VERIFIED, and MANUAL_REVIEW statuses (DUPLICATED is excluded).
    * @param excludePurchaseId - When provided (e.g. on update), excludes this purchase from the count.
    */
   async countOccupied(
@@ -138,18 +137,17 @@ export class TicketAllocationService {
       PurchaseStatus.PENDING,
       PurchaseStatus.VERIFIED,
       PurchaseStatus.MANUAL_REVIEW,
-      PurchaseStatus.DUPLICATED,
       numbersToCheck,
     ];
-    const excludeClause = excludePurchaseId ? ' AND purchase.uid != $7' : '';
+    const excludeClause = excludePurchaseId ? ' AND purchase.uid != $6' : '';
     if (excludePurchaseId) params.push(excludePurchaseId);
 
     const result = await manager.query(
       `SELECT COUNT(*) as count
        FROM purchase, unnest(ticket_numbers) as t_num
        WHERE purchase.raffle_id = $1
-       AND purchase.status IN ($2, $3, $4, $5)
-       AND t_num = ANY($6)${excludeClause}`,
+       AND purchase.status IN ($2, $3, $4)
+       AND t_num = ANY($5)${excludeClause}`,
       params,
     );
     return parseInt(result[0]?.count || '0', 10);
