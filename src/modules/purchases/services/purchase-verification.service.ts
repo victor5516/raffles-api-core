@@ -226,6 +226,7 @@ export class PurchaseVerificationService {
         `[processAiWebhook] FASE 3 Referencia duplicada purchaseId=${purchaseId} duplicatePurchaseId=${existingWithRef.uid} normalizedRef=${normalizedAiRef}`,
       );
       purchase.status = PurchaseStatus.DUPLICATED;
+      purchase.ticketNumbers = null;
       purchase.notes = `Referencia duplicada. Compra duplicada uid: ${existingWithRef.uid}`;
       purchase.exportedToSheets = false;
       const saved = await manager.save(Purchase, purchase);

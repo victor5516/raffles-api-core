@@ -123,7 +123,8 @@ export class TicketAllocationService {
 
   /**
    * Helper to count how many of the requested numbers are already taken.
-   * Checks PENDING, VERIFIED, and MANUAL_REVIEW statuses.
+   * Checks PENDING, VERIFIED, MANUAL_REVIEW, and DUPLICATED statuses.
+   * DUPLICATED purchases retain their ticketNumbers and must be excluded from new assignments.
    * @param excludePurchaseId - When provided (e.g. on update), excludes this purchase from the count.
    */
   async countOccupied(
@@ -137,17 +138,18 @@ export class TicketAllocationService {
       PurchaseStatus.PENDING,
       PurchaseStatus.VERIFIED,
       PurchaseStatus.MANUAL_REVIEW,
+      PurchaseStatus.DUPLICATED,
       numbersToCheck,
     ];
-    const excludeClause = excludePurchaseId ? ' AND purchase.uid != $6' : '';
+    const excludeClause = excludePurchaseId ? ' AND purchase.uid != $7' : '';
     if (excludePurchaseId) params.push(excludePurchaseId);
 
     const result = await manager.query(
       `SELECT COUNT(*) as count
        FROM purchase, unnest(ticket_numbers) as t_num
        WHERE purchase.raffle_id = $1
-       AND purchase.status IN ($2, $3, $4)
-       AND t_num = ANY($5)${excludeClause}`,
+       AND purchase.status IN ($2, $3, $4, $5)
+       AND t_num = ANY($6)${excludeClause}`,
       params,
     );
     return parseInt(result[0]?.count || '0', 10);
@@ -171,19 +173,21 @@ export class TicketAllocationService {
     });
     if (!raffle) throw new NotFoundException('Raffle not found');
 
-    // Get SET of currently occupied numbers (Pending or Verified)
-    // We must exclude the current purchase from the check (though it has no numbers yet)
+    // Get SET of currently occupied numbers (Pending, Verified, Manual Review, or Duplicated).
+    // DUPLICATED purchases retain their ticketNumbers and must not be re-assigned.
+    // We must exclude the current purchase from the check (though it has no numbers yet).
     const takenTicketsRaw = await manager.query(
       `SELECT unnest("ticket_numbers") as num FROM purchase
        WHERE "raffle_id" = $1
        AND "ticket_numbers" IS NOT NULL
-       AND "status" IN ($2, $3, $4)
-       AND uid != $5`,
+       AND "status" IN ($2, $3, $4, $5)
+       AND uid != $6`,
       [
         raffle.uid,
         PurchaseStatus.PENDING,
         PurchaseStatus.VERIFIED,
         PurchaseStatus.MANUAL_REVIEW,
+        PurchaseStatus.DUPLICATED,
         purchase.uid,
       ],
     );
@@ -221,9 +225,5 @@ export class TicketAllocationService {
     }
 
     purchase.ticketNumbers = toAssign;
-    await manager.save(Purchase, purchase);
-
-    // Notification for specific assignment (optional, if needed for email/sms)
-    // this.eventEmitter.emit(...)
   }
 }

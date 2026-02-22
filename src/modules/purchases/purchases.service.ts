@@ -284,13 +284,21 @@ export class PurchasesService {
         totalPaid: totalAmount,
       });
 
-      // If legacy system provided specific numbers, map them
+      // If legacy system provided specific numbers, validate and assign
       if (webhook.ticket_numbers && Array.isArray(webhook.ticket_numbers)) {
-        purchase.ticketNumbers = webhook.ticket_numbers.map(Number);
+        const numbers = webhook.ticket_numbers.map(Number);
+        const lockedRaffle = await manager.findOne(Raffle, {
+          where: { uid: raffle.uid },
+          lock: { mode: 'pessimistic_write' },
+        });
+        await this.allocationService.validateSpecificSelection(
+          manager,
+          lockedRaffle,
+          numbers,
+          numbers.length,
+        );
+        purchase.ticketNumbers = numbers;
       }
-
-      // Note: If VERIFIED and no numbers provided, we might want to auto-assign here.
-      // Logic left optional based on business requirements.
 
       return {
         purchase: await manager.save(Purchase, purchase),
@@ -331,6 +339,7 @@ export class PurchasesService {
             verificationResult.purchase.raffleId,
             verificationResult.purchase,
           );
+          await manager.save(Purchase, verificationResult.purchase);
         }
 
         return verificationResult.purchase;
@@ -379,6 +388,13 @@ export class PurchasesService {
       purchase.status = status;
       purchase.exportedToSheets = false;
 
+      if (
+        status === PurchaseStatus.REJECTED ||
+        status === PurchaseStatus.DUPLICATED
+      ) {
+        purchase.ticketNumbers = null;
+      }
+
       if (status === PurchaseStatus.VERIFIED) {
         purchase.verifiedAt = new Date();
         purchase.verificationSource = VerificationSource.ADMIN;
@@ -386,6 +402,14 @@ export class PurchasesService {
         purchase.notes = null; // Notas limpias al verificar
         if (adminId) {
           purchase.verifiedByAdmin = { uid: adminId } as any;
+        }
+        // Assign ticket numbers for RANDOM raffles that don't have them yet
+        if (!purchase.ticketNumbers || purchase.ticketNumbers.length === 0) {
+          await this.allocationService.assignRandomNumbers(
+            manager,
+            purchase.raffleId,
+            purchase,
+          );
         }
       }
       await manager.save(Purchase, purchase);
@@ -505,12 +529,17 @@ export class PurchasesService {
           );
         }
         if (!raffle) throw new NotFoundException('Raffle not found');
+        // Acquire pessimistic write lock to prevent concurrent duplicate assignment
+        const lockedRaffle = await manager.findOne(Raffle, {
+          where: { uid: raffle.uid },
+          lock: { mode: 'pessimistic_write' },
+        });
         const uniqueNumbers = new Set(numbers);
         if (uniqueNumbers.size !== numbers.length) {
           throw new BadRequestException('ticket_numbers contains duplicates');
         }
         const invalid = numbers.filter(
-          (n) => n < 0 || n >= raffle.totalTickets,
+          (n) => n < 0 || n >= lockedRaffle.totalTickets,
         );
         if (invalid.length > 0) {
           throw new BadRequestException(
@@ -519,7 +548,7 @@ export class PurchasesService {
         }
         const occupiedCount = await this.allocationService.countOccupied(
           manager,
-          raffle.uid,
+          lockedRaffle.uid,
           numbers,
           purchase.uid,
         );
@@ -568,6 +597,11 @@ export class PurchasesService {
           if (adminId) {
             purchase.verifiedByAdmin = { uid: adminId } as any;
           }
+        } else if (
+          effectiveDto.status === PurchaseStatus.REJECTED ||
+          effectiveDto.status === PurchaseStatus.DUPLICATED
+        ) {
+          purchase.ticketNumbers = null;
         }
       }
       if (effectiveDto.totalAmount !== undefined)

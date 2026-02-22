@@ -6,6 +6,7 @@ import {
 import { InjectEntityManager } from '@nestjs/typeorm';
 import { EntityManager } from 'typeorm';
 import { BankStatementParserService } from './bank-statement-parser.service';
+import { TicketAllocationService } from './ticket-allocation.service';
 import { BankTransaction, ReconciliationResult } from '../dto/reconciliation.dto';
 import {
   Purchase,
@@ -21,6 +22,7 @@ export class ReconciliationService {
     private readonly bankParser: BankStatementParserService,
     @InjectEntityManager()
     private readonly entityManager: EntityManager,
+    private readonly allocationService: TicketAllocationService,
   ) {}
 
   async reconcile(
@@ -98,7 +100,19 @@ export class ReconciliationService {
 
     const toSave = [...updatable, ...forAuditStamp];
     if (toSave.length > 0) {
-      await this.entityManager.save(toSave);
+      await this.entityManager.transaction(async (txManager) => {
+        // Assign ticket numbers for newly-verified RANDOM raffle purchases
+        for (const purchase of updatable) {
+          if (!purchase.ticketNumbers || purchase.ticketNumbers.length === 0) {
+            await this.allocationService.assignRandomNumbers(
+              txManager,
+              purchase.raffleId,
+              purchase,
+            );
+          }
+        }
+        await txManager.save(toSave);
+      });
     }
 
     return {
