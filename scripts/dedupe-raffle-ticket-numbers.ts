@@ -16,7 +16,7 @@ const dataSource = new DataSource({
 });
 
 const RAFFLE_UID = process.env.RAFFLE_UID || 'cb2ad5d1-cca6-4936-bcb6-85b11d7e4b8d';
-const DRY_RUN = process.env.DRY_RUN === 'true';
+const DRY_RUN = true;
 
 interface DuplicateRow {
   ticket_number: number;

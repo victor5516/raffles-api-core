@@ -23,6 +23,7 @@ import {
   PurchaseStatus,
   VerificationSource,
   PaymentEntry,
+  PromotionSnapshot,
 } from './entities/purchase.entity';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
 import { Customer } from 'src/modules/customers/entities/customer.entity';
@@ -120,6 +121,22 @@ export class PurchasesService {
         );
       }
 
+      const originalAmount = Number(
+        (unitPriceInPaymentCurrency * createDto.ticket_quantity).toFixed(2),
+      );
+      const discountAmount = Number(
+        (originalAmount - totalAmountToPersist).toFixed(2),
+      );
+      const promotionSnapshot: PromotionSnapshot | null =
+        discountAmount > 0.01 && raffle.promotionStrategy
+          ? {
+              strategy: raffle.promotionStrategy,
+              config: raffle.promotionConfig,
+              originalAmount,
+              discountAmount,
+            }
+          : null;
+
       // 3. Validate Capacity & Reserve Tickets Strategy
       // Returns specific numbers if selected, or null if random (to be assigned later)
       const ticketNumbers =
@@ -183,6 +200,7 @@ export class PurchasesService {
         paymentMethodId: createDto.paymentMethodId,
         ticketQuantity: createDto.ticket_quantity,
         totalAmount: totalAmountToPersist,
+        promotionSnapshot,
         bankReference:
           createDto.bank_reference || paymentsArray[0]?.reference || '',
         paymentScreenshotUrl: screenshotKey,

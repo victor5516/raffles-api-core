@@ -26,6 +26,13 @@ export interface PaymentEntry {
   paymentMethodName?: string;
 }
 
+export interface PromotionSnapshot {
+  strategy: string;
+  config: object;
+  originalAmount: number;
+  discountAmount: number;
+}
+
 export enum PurchaseStatus {
   PENDING = 'pending',
   VERIFIED = 'verified',
@@ -98,6 +105,9 @@ export class Purchase {
     nullable: true,
   })
   totalAmount: number;
+
+  @Column({ type: 'jsonb', nullable: true, name: 'promotion_snapshot' })
+  promotionSnapshot: PromotionSnapshot | null;
 
   @Column({ type: 'jsonb', nullable: true, name: 'ai_analysis_result' })
   aiAnalysisResult: any;
