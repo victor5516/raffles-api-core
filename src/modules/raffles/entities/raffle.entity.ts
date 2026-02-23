@@ -12,6 +12,7 @@ export enum RaffleStatus {
   DRAFT = 'draft',
   ACTIVE = 'active',
   CLOSED = 'closed',
+  RESTRICTED = 'restricted',
 }
 
 export enum RaffleSelectionType {
