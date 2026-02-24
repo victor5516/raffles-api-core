@@ -22,12 +22,20 @@
     }
     .header {
       text-align: center;
-      border-bottom: 3px solid #e74c3c;
+      border-bottom: 3px solid #1ed760;
       padding-bottom: 20px;
       margin-bottom: 30px;
     }
+    .brand-logo {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      object-fit: cover;
+      display: block;
+      margin: 0 auto 10px;
+    }
     .header h1 {
-      color: #e74c3c;
+      color: #1ed760;
       margin: 0;
     }
     .content {
@@ -35,20 +43,20 @@
     }
     .info-box {
       background-color: #f8f9fa;
-      border-left: 4px solid #e74c3c;
+      border-left: 4px solid #1ed760;
       padding: 15px;
       margin: 20px 0;
     }
     .ticket-numbers {
-      background-color: #fff3cd;
-      border: 1px solid #ffc107;
+      background-color: #2A2F36;
+      border: 1px solid #1ed760;
       border-radius: 4px;
       padding: 15px;
       margin: 20px 0;
     }
     .ticket-numbers h3 {
       margin-top: 0;
-      color: #856404;
+      color: #FAFAFA;
     }
     .ticket-list {
       display: flex;
@@ -58,11 +66,11 @@
     }
     .ticket-number {
       background-color: #ffffff;
-      border: 2px solid #ffc107;
+      border: 2px solid #1ed760;
       border-radius: 4px;
       padding: 8px 12px;
       font-weight: bold;
-      color: #856404;
+      color: #000000;
     }
     .footer {
       margin-top: 30px;
@@ -73,7 +81,7 @@
       color: #666;
     }
     .highlight {
-      color: #e74c3c;
+      color: #1ed760;
       font-weight: bold;
     }
   </style>
@@ -81,19 +89,20 @@
 <body>
   <div class="container">
     <div class="header">
+      <img src="{{logoUrl}}" alt="{{brandName}} logo" class="brand-logo" />
       <h1>🎟️ {{brandName}}</h1>
     </div>
-    
+
     <div class="content">
       <p>Hola <strong>{{customer.fullName}}</strong>,</p>
-      
+
       <p>Hemos recibido tu pago y estamos procesando tu compra. Te notificaremos una vez que sea verificada.</p>
-      
+
       <div class="info-box">
         <p><strong>Detalles de tu compra:</strong></p>
         <ul>
-          <li><strong>Rifa:</strong> {{#if raffle}}{{raffle.title}}{{else}}N/A{{/if}}</li>
-          <li><strong>Cantidad de tickets:</strong> {{purchase.ticketQuantity}}</li>
+          <li><strong>Sorteo:</strong> {{#if raffle}}{{raffle.title}}{{else}}N/A{{/if}}</li>
+          <li><strong>Cantidad de boletos:</strong> {{purchase.ticketQuantity}}</li>
           <li><strong>Monto total:</strong> <span class="highlight">${{purchase.totalAmount}}</span></li>
           <li><strong>Referencia bancaria:</strong> {{purchase.bankReference}}</li>
           <li><strong>Fecha:</strong> {{purchase.submittedAt}}</li>
@@ -110,7 +119,7 @@
           <span class="ticket-number">{{this}}</span>
           {{/each}}
         </div>
-        <p style="margin-top: 15px; font-size: 14px; color: #856404;">
+        <p style="margin-top: 15px; font-size: 14px; color: #FAFAFA;">
           <em>Nota: Estos números serán confirmados una vez que tu pago sea verificado.</em>
         </p>
       </div>
@@ -118,10 +127,10 @@
       {{/if}}
 
       <p>Recibirás un correo de confirmación una vez que tu pago haya sido verificado.</p>
-      
+
       <p>Si tienes alguna pregunta, no dudes en contactarnos respondiendo a este correo.</p>
     </div>
-    
+
     <div class="footer">
       <p>© {{year}} {{brandName}}. Todos los derechos reservados.</p>
       <p>Este es un correo automático, por favor no respondas directamente.</p>

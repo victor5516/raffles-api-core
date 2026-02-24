@@ -15,8 +15,8 @@ import { GoogleSheetsService } from '../../common/services/google-sheets.service
 import { TicketAllocationService } from './services/ticket-allocation.service';
 import { BankStatementParserService } from './services/bank-statement-parser.service';
 import { ReconciliationService } from './services/reconciliation.service';
-// import { MailModule } from '../mail/mail.module';
-// import { PurchasesMailListener } from './listeners/purchases-mail.listener';
+import { MailModule } from '../mail/mail.module';
+import { PurchasesMailListener } from './listeners/purchases-mail.listener';
 
 @Module({
   imports: [
@@ -28,7 +28,7 @@ import { ReconciliationService } from './services/reconciliation.service';
       PaymentMethod,
       Currency,
     ]),
-    // MailModule, // Deshabilitado: SES no funciona
+    MailModule,
   ],
   controllers: [PurchasesController],
   providers: [
@@ -40,7 +40,8 @@ import { ReconciliationService } from './services/reconciliation.service';
     TicketAllocationService,
     BankStatementParserService,
     ReconciliationService,
-  ], // PurchasesMailListener removido: SES no funciona
+    PurchasesMailListener,
+  ],
   exports: [PurchasesService, PurchasesExportService],
 })
 export class PurchasesModule {}
