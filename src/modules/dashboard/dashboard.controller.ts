@@ -37,9 +37,7 @@ export class DashboardController {
   }
 
   @Get('top-customers/:raffleId')
-  @AdminAuth()
-  @ApiOperation({ summary: 'Obtener top clientes por rifa' })
-  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Obtener top compradores por rifa (público)' })
   @ApiParam({
     name: 'raffleId',
     description: 'UID de la rifa',
@@ -48,7 +46,7 @@ export class DashboardController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Top clientes obtenido exitosamente',
+    description: 'Top compradores obtenido exitosamente',
   })
   getTopCustomers(@Param('raffleId') raffleId: string) {
     return this.dashboardService.getTopCustomers(raffleId);
