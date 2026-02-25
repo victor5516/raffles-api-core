@@ -171,6 +171,13 @@ export class RaffleStatsResponseDto {
 
   @ApiProperty({
     description:
+      'Monto total recogido convertido a dólares estadounidenses (USD), usando Currency.value como valor por dólar',
+    example: 10.25,
+  })
+  amountCollectedInUsd: number;
+
+  @ApiProperty({
+    description:
       'Montos recogidos por cada divisa (compras verificadas). Se incluyen todas las divisas configuradas, aunque su monto sea 0.',
     type: () => [RaffleAmountByCurrencyDto],
   })

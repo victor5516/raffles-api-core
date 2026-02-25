@@ -189,6 +189,10 @@ export class DashboardService {
       0,
     );
 
+    const amountCollectedInUsd = await this.computeRaffleAmountInUsd(
+      amountCollectedByCurrency,
+    );
+
     return {
       raffleId: raffle.uid,
       raffleTitle: raffle.title,
@@ -210,7 +214,36 @@ export class DashboardService {
       aiApprovedThenRejected: aiAuditStats.aiApprovedThenRejected,
       aiWithDoubleCheckEffective: aiAuditStats.aiWithDoubleCheckEffective,
       aiRejectedSales: aiAuditStats.aiRejectedSales,
+      amountCollectedInUsd,
     };
+  }
+
+  private async computeRaffleAmountInUsd(
+    amountCollectedByCurrency: RaffleAmountByCurrency[],
+  ): Promise<number> {
+    const currencies = await this.currencyRepository.find({
+      order: { name: 'ASC' },
+    });
+
+    const currencyMap = new Map<string, Currency>(
+      currencies.map((currency) => [currency.uid, currency]),
+    );
+
+    const amountCollectedInUsd = amountCollectedByCurrency.reduce(
+      (sumUsd, row) => {
+        const currency = currencyMap.get(row.currencyId);
+        if (!currency) return sumUsd;
+
+        const value = Number(currency.value ?? 0);
+        const rate = value > 0 ? value : 1;
+        const amountInUsd = row.amountCollected / rate;
+
+        return sumUsd + amountInUsd;
+      },
+      0,
+    );
+
+    return amountCollectedInUsd;
   }
 
   private computeChange(current: number, previous: number): Metric {
