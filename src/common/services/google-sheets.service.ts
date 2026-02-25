@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { GaxiosError } from 'gaxios';
 import { google, sheets_v4 } from 'googleapis';
 import { join } from 'path';
 
@@ -7,10 +8,27 @@ interface SheetSyncRow {
   values: any[];
 }
 
+export class SheetsPermissionError extends Error {
+  constructor(
+    public readonly spreadsheetId: string,
+    public readonly originalError: unknown,
+  ) {
+    super(
+      `Google Sheets permission error for spreadsheet "${spreadsheetId}" (caller does not have permission)`,
+    );
+  }
+}
+
 @Injectable()
 export class GoogleSheetsService implements OnModuleInit {
   private readonly logger = new Logger(GoogleSheetsService.name);
   private sheets: sheets_v4.Sheets | null = null;
+  // Maximum delay for exponential backoff when handling quota errors (in ms)
+  private readonly maxBackoffMs = 32000;
+  // Maximum number of retries for quota-related errors
+  private readonly maxBackoffRetries = 5;
+  // Optional cache of sheet names per spreadsheet for the lifetime of a job
+  private sheetNamesCache: Map<string, string[]> | null = null;
 
   async onModuleInit(): Promise<void> {
     try {
@@ -39,18 +57,22 @@ export class GoogleSheetsService implements OnModuleInit {
     sheetName: string,
     values: any[][],
   ): Promise<void> {
-    const sheets = this.getClient();
     if (!values.length) {
       return;
     }
 
+    const sheets = this.getClient();
     const range = this.rangeRef(sheetName, 'A:A');
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values },
-    });
+    await this.withBackoff(
+      () =>
+        sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values },
+        }),
+      { spreadsheetId },
+    );
   }
 
   /**
@@ -62,31 +84,39 @@ export class GoogleSheetsService implements OnModuleInit {
     sheetName: string,
   ): Promise<void> {
     const sheets = this.getClient();
-    const res = await sheets.spreadsheets.get({
-      spreadsheetId,
-      fields: 'sheets(properties(title))',
-    });
+    const res = await this.withBackoff(
+      () =>
+        sheets.spreadsheets.get({
+          spreadsheetId,
+          fields: 'sheets(properties(title))',
+        }),
+      { spreadsheetId },
+    );
     const existing = (res.data.sheets ?? []).some(
       (s) => (s.properties?.title ?? '').trim() === sheetName.trim(),
     );
     if (existing) {
       return;
     }
-    await sheets.spreadsheets.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        requests: [
-          {
-            addSheet: {
-              properties: {
-                title: sheetName.trim().slice(0, 100),
-                gridProperties: { rowCount: 1000, columnCount: 26 },
+    await this.withBackoff(
+      () =>
+        sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                addSheet: {
+                  properties: {
+                    title: sheetName.trim().slice(0, 100),
+                    gridProperties: { rowCount: 1000, columnCount: 26 },
+                  },
+                },
               },
-            },
+            ],
           },
-        ],
-      },
-    });
+        }),
+      { spreadsheetId },
+    );
     this.logger.log(
       `Created sheet "${sheetName}" in spreadsheet ${spreadsheetId}`,
     );
@@ -98,23 +128,43 @@ export class GoogleSheetsService implements OnModuleInit {
     range: string,
   ): Promise<any[][]> {
     const sheets = this.getClient();
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: this.rangeRef(sheetName, range),
-    });
+    const response = await this.withBackoff(
+      () =>
+        sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: this.rangeRef(sheetName, range),
+        }),
+      { spreadsheetId },
+    );
     return response.data.values ?? [];
   }
 
   async getSheetNames(spreadsheetId: string): Promise<string[]> {
-    const sheets = this.getClient();
-    const response = await sheets.spreadsheets.get({
-      spreadsheetId,
-      fields: 'sheets(properties(title))',
-    });
+    // Use in-memory cache when available to avoid repeated metadata reads.
+    if (this.sheetNamesCache?.has(spreadsheetId)) {
+      return this.sheetNamesCache.get(spreadsheetId) ?? [];
+    }
 
-    return (response.data.sheets ?? [])
+    const sheets = this.getClient();
+    const response = await this.withBackoff(
+      () =>
+        sheets.spreadsheets.get({
+          spreadsheetId,
+          fields: 'sheets(properties(title))',
+        }),
+      { spreadsheetId },
+    );
+
+    const names = (response.data.sheets ?? [])
       .map((sheet) => String(sheet.properties?.title ?? '').trim())
       .filter((title) => title.length > 0);
+
+    if (!this.sheetNamesCache) {
+      this.sheetNamesCache = new Map();
+    }
+    this.sheetNamesCache.set(spreadsheetId, names);
+
+    return names;
   }
 
   async syncRowsByUid(
@@ -146,12 +196,16 @@ export class GoogleSheetsService implements OnModuleInit {
     let dataRows = existingRows;
     if (headers) {
       const headerRange = `A1:${this.columnLetterFromIndex(headers.length)}1`;
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: this.rangeRef(sheetName, headerRange),
-        valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [headers] },
-      });
+      await this.withBackoff(
+        () =>
+          sheets.spreadsheets.values.update({
+            spreadsheetId,
+            range: this.rangeRef(sheetName, headerRange),
+            valueInputOption: 'USER_ENTERED',
+            requestBody: { values: [headers] },
+          }),
+        { spreadsheetId },
+      );
       dataRows =
         existingRows.length > 0 && this.isHeaderRow(existingRows[0], headers)
           ? existingRows.slice(1)
@@ -243,13 +297,17 @@ export class GoogleSheetsService implements OnModuleInit {
     }
 
     if (updateData.length > 0) {
-      await sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          valueInputOption: 'USER_ENTERED',
-          data: updateData,
-        },
-      });
+      await this.withBackoff(
+        () =>
+          sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+              valueInputOption: 'USER_ENTERED',
+              data: updateData,
+            },
+          }),
+        { spreadsheetId },
+      );
     }
 
     if (appendValues.length > 0) {
@@ -265,19 +323,27 @@ export class GoogleSheetsService implements OnModuleInit {
   ): Promise<void> {
     const sheets = this.getClient();
     await this.ensureSheetExists(spreadsheetId, sheetName);
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: this.rangeRef(sheetName, 'A:ZZ'),
-    });
+    await this.withBackoff(
+      () =>
+        sheets.spreadsheets.values.clear({
+          spreadsheetId,
+          range: this.rangeRef(sheetName, 'A:ZZ'),
+        }),
+      { spreadsheetId },
+    );
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: this.rangeRef(sheetName, 'A1'),
-      valueInputOption: 'USER_ENTERED',
-      requestBody: {
-        values: [headers, ...rows],
-      },
-    });
+    await this.withBackoff(
+      () =>
+        sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: this.rangeRef(sheetName, 'A1'),
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            values: [headers, ...rows],
+          },
+        }),
+      { spreadsheetId },
+    );
   }
 
   private getClient(): sheets_v4.Sheets {
@@ -325,5 +391,61 @@ export class GoogleSheetsService implements OnModuleInit {
       current = Math.floor((current - 1) / 26);
     }
     return result || 'A';
+  }
+
+  /**
+   * Allows callers (like cron jobs) to share a sheet names cache across a single
+   * execution to minimize metadata reads.
+   */
+  setSheetNamesCache(cache: Map<string, string[]> | null): void {
+    this.sheetNamesCache = cache;
+  }
+
+  private async withBackoff<T>(
+    fn: () => Promise<T>,
+    context?: { spreadsheetId?: string },
+  ): Promise<T> {
+    let attempt = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        return await fn();
+      } catch (error) {
+        const err = error as GaxiosError;
+        const status = (err as any)?.code ?? err?.response?.status;
+        const message = String(err?.message ?? '').toLowerCase();
+
+        // Permission errors: wrap in a specific error type so callers can react accordingly.
+        if (
+          status === 403 ||
+          message.includes('the caller does not have permission')
+        ) {
+          const spreadsheetId = context?.spreadsheetId ?? 'unknown';
+          throw new SheetsPermissionError(spreadsheetId, err);
+        }
+
+        const isQuotaError =
+          status === 429 || message.includes('quota exceeded');
+
+        if (!isQuotaError || attempt >= this.maxBackoffRetries) {
+          throw err;
+        }
+
+        const delayMs = Math.min(
+          (2 ** attempt) * 1000 + Math.floor(Math.random() * 1000),
+          this.maxBackoffMs,
+        );
+
+        this.logger.warn(
+          `Google Sheets API quota exceeded (attempt ${attempt + 1}/${
+            this.maxBackoffRetries
+          }) for spreadsheet "${context?.spreadsheetId ?? 'unknown'}". ` +
+            `Retrying after ${delayMs}ms.`,
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        attempt += 1;
+      }
+    }
   }
 }

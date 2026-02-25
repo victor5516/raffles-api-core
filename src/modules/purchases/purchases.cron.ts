@@ -8,7 +8,10 @@ import {
   PurchaseStatus,
 } from './entities/purchase.entity';
 import { PaymentMethod } from '../payments/entities/payment-method.entity';
-import { GoogleSheetsService } from '../../common/services/google-sheets.service';
+import {
+  GoogleSheetsService,
+  SheetsPermissionError,
+} from '../../common/services/google-sheets.service';
 import { formatDateVenezuela } from '../../common/utils/date.util';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -73,6 +76,10 @@ function resolveSheetName(
 export class PurchasesCron {
   private readonly logger = new Logger(PurchasesCron.name);
   private isRunning = false;
+  // Throttle between Sheets API calls in tight loops (ms). Can be tuned if needed.
+  private readonly sheetsThrottleMs = Number(
+    process.env.SHEETS_THROTTLE_MS ?? '200',
+  );
 
   constructor(
     @InjectRepository(Purchase)
@@ -106,6 +113,9 @@ export class PurchasesCron {
     }
 
     this.isRunning = true;
+    // Cache of sheet names per spreadsheet shared across this export run
+    const sheetNamesCache = new Map<string, string[]>();
+    this.googleSheetsService.setSheetNamesCache(sheetNamesCache);
     try {
       const purchases = await this.purchaseRepository.find({
         where: fullRebuild ? {} : { exportedToSheets: false },
@@ -183,11 +193,21 @@ export class PurchasesCron {
             }
             totalRows += rows.length;
             syncedSheetsTotal += 1;
+            if (this.sheetsThrottleMs > 0) {
+              await this.sleep(this.sheetsThrottleMs);
+            }
           } catch (err) {
-            this.logger.error(
-              `Failed syncing sheet "${sheetName}" in spreadsheet "${spreadsheetId}"`,
-              err instanceof Error ? err.stack : String(err),
-            );
+            if (err instanceof SheetsPermissionError) {
+              this.logger.error(
+                `Google Sheets permission error while syncing spreadsheet "${err.spreadsheetId}". ` +
+                  'Verify that the spreadsheet is shared with the service account.',
+              );
+            } else {
+              this.logger.error(
+                `Failed syncing sheet "${sheetName}" in spreadsheet "${spreadsheetId}"`,
+                err instanceof Error ? err.stack : String(err),
+              );
+            }
           }
         }
       }
@@ -208,12 +228,20 @@ export class PurchasesCron {
         sheets: syncedSheetsTotal,
       };
     } catch (err) {
-      this.logger.error(
-        'Failed to export purchases to Google Sheets',
-        err instanceof Error ? err.stack : String(err),
-      );
+      if (err instanceof SheetsPermissionError) {
+        this.logger.error(
+          `Failed to export purchases: Google Sheets permission error for spreadsheet "${err.spreadsheetId}". ` +
+            'Ensure the spreadsheet is shared with the service account.',
+        );
+      } else {
+        this.logger.error(
+          'Failed to export purchases to Google Sheets',
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
       throw err;
     } finally {
+      this.googleSheetsService.setSheetNamesCache(null);
       this.isRunning = false;
     }
   }
@@ -366,11 +394,12 @@ export class PurchasesCron {
       return;
     }
 
-    const candidateSheetNames = await this.buildCleanupCandidateSheetNames(
-      purchases,
-      byPaymentMethod,
-      sheetNameByPaymentMethodId,
-    );
+    const candidateSheetNames =
+      await this.buildIncrementalCleanupCandidateSheetNames(
+        purchases,
+        byPaymentMethod,
+        sheetNameByPaymentMethodId,
+      );
     const existingSet = new Set(existingSheetNames.map((name) => name.trim()));
     const targetSheetNames = Array.from(candidateSheetNames).filter((name) =>
       existingSet.has(name.trim()),
@@ -398,6 +427,9 @@ export class PurchasesCron {
           SHEET_HEADERS,
         );
         clearedSheets += 1;
+        if (this.sheetsThrottleMs > 0) {
+          await this.sleep(this.sheetsThrottleMs);
+        }
       } catch (err) {
         this.logger.warn(
           `Failed clearing stale rows on sheet "${sheetName}"`,
@@ -418,12 +450,27 @@ export class PurchasesCron {
     byPaymentMethod: Map<string, SheetSyncRow[]>,
     sheetNameByPaymentMethodId: Map<string, string>,
   ): Promise<Set<string>> {
+    // Kept for potential future use (e.g. full rebuild cleanup). Currently not used.
+    return this.buildIncrementalCleanupCandidateSheetNames(
+      purchases,
+      byPaymentMethod,
+      sheetNameByPaymentMethodId,
+    );
+  }
+
+  private async buildIncrementalCleanupCandidateSheetNames(
+    purchases: Purchase[],
+    byPaymentMethod: Map<string, SheetSyncRow[]>,
+    sheetNameByPaymentMethodId: Map<string, string>,
+  ): Promise<Set<string>> {
     const candidateSheetNames = new Set<string>();
 
+    // Always include sheets that will be written in this run.
     for (const sheetName of byPaymentMethod.keys()) {
       candidateSheetNames.add(sheetName);
     }
 
+    // Include sheet names directly derived from the purchases being processed.
     for (const p of purchases) {
       candidateSheetNames.add(
         toSheetName(p.paymentMethod?.sheetName ?? p.paymentMethod?.name ?? 'Unknown'),
@@ -442,16 +489,13 @@ export class PurchasesCron {
       }
     }
 
-    const allPaymentMethods = await this.paymentMethodRepository.find();
-    for (const method of allPaymentMethods) {
-      candidateSheetNames.add(toSheetName(method.sheetName ?? method.name));
-      candidateSheetNames.add(toSheetName(method.name));
-      const currencySymbol = method.currency?.symbol;
-      if (currencySymbol) {
-        candidateSheetNames.add(toSheetName(currencySymbol));
-      }
-    }
-
     return candidateSheetNames;
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    if (ms <= 0) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

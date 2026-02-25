@@ -42,6 +42,34 @@ Required environment variables:
 
 Credentials are read by the AWS SDK via standard env vars (for example `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`) or any other default AWS credential provider supported in your environment.
 
+## Google Sheets export (purchases)
+
+This project periodically exports purchases to Google Sheets using a NestJS cron job and the Google Sheets API. To avoid hitting the **`Read requests per minute per user`** quota and to make debugging easier, the integration follows a few rules:
+
+- **Exponential backoff & retries**
+  - All Google Sheets API calls (reads and writes) are wrapped with a truncated exponential backoff strategy.
+  - Quota-related errors (HTTP `429` or messages containing `Quota exceeded`) are retried a limited number of times with increasing delays and jitter.
+  - Permission errors (HTTP `403` / `The caller does not have permission`) are surfaced as `SheetsPermissionError` with the offending `spreadsheetId` in logs.
+
+- **Sheet metadata caching**
+  - During a single export run, the service caches the list of sheet names per spreadsheet ID.
+  - Subsequent calls for the same spreadsheet reuse the cached sheet list instead of performing extra `spreadsheets.get` calls.
+
+- **Throttling between calls**
+  - Tight loops that sync or clear multiple sheets apply a small delay between each Sheets API call.
+  - The delay is controlled via the `SHEETS_THROTTLE_MS` environment variable (default: `200` ms). Increase this value if you still see quota errors.
+
+- **Cleanup behavior**
+  - Incremental exports only attempt to clear stale rows in sheets that are directly related to the purchases being processed (current payment methods / currencies).
+  - Full, aggressive cleanup across all possible sheet names should be performed via explicit rebuild flows rather than on every hourly cron.
+
+### Required configuration
+
+- A service account JSON key file named `google-credentials.json` must be available in the backend working directory.
+- Each raffle must have a valid `spreadsheetId` configured and that spreadsheet must be **shared with the service account** (editor permissions recommended).
+- Optional:
+  - `SHEETS_THROTTLE_MS` to control throttling between Sheets API calls.
+
 ## Compile and run the project
 
 ```bash
