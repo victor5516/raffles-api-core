@@ -102,7 +102,7 @@
         <p><strong>Detalles de tu compra:</strong></p>
         <ul>
           <li><strong>Sorteo:</strong> {{#if raffle}}{{raffle.title}}{{else}}N/A{{/if}}</li>
-          <li><strong>Cantidad de boletos:</strong> {{purchase.ticketQuantity}}</li>
+          <li><strong>Cantidad de entradas:</strong> {{purchase.ticketQuantity}}</li>
           <li><strong>Monto total:</strong> <span class="highlight">${{purchase.totalAmount}}</span></li>
           <li><strong>Referencia bancaria:</strong> {{purchase.bankReference}}</li>
           <li><strong>Fecha:</strong> {{purchase.submittedAt}}</li>
@@ -112,7 +112,7 @@
       {{#if purchase.ticketNumbers}}
       {{#if purchase.ticketNumbers.length}}
       <div class="ticket-numbers">
-        <h3>📋 Números Reservados</h3>
+        <h3>📋 Entradas para el evento</h3>
         <p>Los siguientes números han sido reservados para ti mientras verificamos tu pago:</p>
         <div class="ticket-list">
           {{#each purchase.ticketNumbers}}

@@ -111,13 +111,13 @@
     <div class="content">
       <p>Hola <strong>{{customer.fullName}}</strong>,</p>
 
-      <p>¡Excelente noticia! Tu compra ha sido verificada y tus boletos están confirmados.</p>
+      <p>¡Excelente noticia! Tu compra ha sido verificada y tus entradas están confirmadas.</p>
 
       <div class="info-box">
         <p><strong>Detalles de tu compra:</strong></p>
         <ul>
           <li><strong>Sorteo:</strong> {{#if raffle}}{{raffle.title}}{{else}}N/A{{/if}}</li>
-          <li><strong>Cantidad de boletos:</strong> {{purchase.ticketQuantity}}</li>
+          <li><strong>Cantidad de entradas:</strong> {{purchase.ticketQuantity}}</li>
           <li><strong>Monto total:</strong> <span class="highlight">${{purchase.totalAmount}}</span></li>
           <li><strong>Referencia bancaria:</strong> {{purchase.bankReference}}</li>
           <li><strong>Fecha de verificación:</strong> {{purchase.verifiedAt}}</li>
@@ -127,7 +127,7 @@
       {{#if purchase.ticketNumbers}}
       {{#if purchase.ticketNumbers.length}}
       <div class="ticket-numbers">
-        <h3>🎫 Tus Boletos Confirmados</h3>
+        <h3>🎫 Tus Entradas Confirmadas</h3>
         <p>Los siguientes números están oficialmente asignados a tu nombre:</p>
         <div class="ticket-list">
           {{#each purchase.ticketNumbers}}
@@ -135,7 +135,7 @@
           {{/each}}
         </div>
         <p style="margin-top: 15px; font-size: 14px; color: #FAFAFA;">
-          <strong>¡Guarda estos números! Son tus boletos oficiales.</strong>
+          <strong>¡Guarda estos números! Son tus entradas oficiales.</strong>
         </p>
       </div>
       {{/if}}
