@@ -83,6 +83,62 @@ export class RaffleAmountByCurrencyDto {
     example: 1250.75,
   })
   amountCollected: number;
+
+  @ApiProperty({
+    description: 'Tasa de cambio (unidades de esta divisa por 1 USD)',
+    example: 36.5,
+  })
+  exchangeRate: number;
+
+  @ApiProperty({
+    description: 'Monto recogido convertido a USD',
+    example: 3480.82,
+  })
+  amountCollectedInUsd: number;
+}
+
+export class RaffleAmountByPaymentMethodDto {
+  @ApiProperty({
+    description: 'UID del método de pago',
+    example: '0b402c17-b72c-4f73-b121-93c4df8a326f',
+  })
+  paymentMethodId: string;
+
+  @ApiProperty({
+    description: 'Nombre del método de pago',
+    example: 'Pago Movil',
+  })
+  paymentMethodName: string;
+
+  @ApiProperty({
+    description: 'Símbolo de la divisa del método de pago',
+    example: 'VES',
+  })
+  currencySymbol: string;
+
+  @ApiProperty({
+    description: 'Monto recogido con este método de pago (compras verificadas)',
+    example: 127050,
+  })
+  amountCollected: number;
+
+  @ApiProperty({
+    description: 'Tasa de cambio (unidades de esta divisa por 1 USD)',
+    example: 36.5,
+  })
+  exchangeRate: number;
+
+  @ApiProperty({
+    description: 'Monto recogido convertido a USD',
+    example: 3480.82,
+  })
+  amountCollectedInUsd: number;
+
+  @ApiProperty({
+    description: 'Total de compras verificadas con este método de pago',
+    example: 42,
+  })
+  totalPurchases: number;
 }
 
 export class RaffleTicketsSoldByDayDto {
@@ -182,6 +238,13 @@ export class RaffleStatsResponseDto {
     type: () => [RaffleAmountByCurrencyDto],
   })
   amountCollectedByCurrency: RaffleAmountByCurrencyDto[];
+
+  @ApiProperty({
+    description:
+      'Montos recogidos por cada método de pago (compras verificadas). Solo aparecen métodos con al menos una compra.',
+    type: () => [RaffleAmountByPaymentMethodDto],
+  })
+  amountCollectedByPaymentMethod: RaffleAmountByPaymentMethodDto[];
 
   @ApiProperty({
     description:

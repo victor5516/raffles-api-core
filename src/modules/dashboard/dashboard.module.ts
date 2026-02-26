@@ -6,9 +6,12 @@ import { Purchase } from '../purchases/entities/purchase.entity';
 import { Customer } from '../customers/entities/customer.entity';
 import { Raffle } from '../raffles/entities/raffle.entity';
 import { Currency } from '../currencies/entities/currency.entity';
+import { PaymentMethod } from '../payments/entities/payment-method.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Purchase, Customer, Raffle, Currency])],
+  imports: [
+    TypeOrmModule.forFeature([Purchase, Customer, Raffle, Currency, PaymentMethod]),
+  ],
   controllers: [DashboardController],
   providers: [DashboardService],
 })

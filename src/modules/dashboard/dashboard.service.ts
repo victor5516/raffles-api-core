@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import {
   Purchase,
   PurchaseStatus,
@@ -9,7 +9,10 @@ import {
 import { Customer } from '../customers/entities/customer.entity';
 import { Raffle, RaffleStatus } from '../raffles/entities/raffle.entity';
 import { Currency } from '../currencies/entities/currency.entity';
+import { PaymentMethod } from '../payments/entities/payment-method.entity';
 import { RaffleStatsResponseDto } from './dto/raffle-stats-response.dto';
+
+const EXCLUDED_PURCHASE_STATUSES = [PurchaseStatus.REJECTED, PurchaseStatus.DUPLICATED];
 
 type Metric = {
   current: number;
@@ -46,6 +49,18 @@ type RaffleAmountByCurrency = {
   currencyName: string;
   currencySymbol: string;
   amountCollected: number;
+  exchangeRate: number;
+  amountCollectedInUsd: number;
+};
+
+type RaffleAmountByPaymentMethod = {
+  paymentMethodId: string;
+  paymentMethodName: string;
+  currencySymbol: string;
+  amountCollected: number;
+  exchangeRate: number;
+  amountCollectedInUsd: number;
+  totalPurchases: number;
 };
 
 type RaffleTicketsSoldByDay = {
@@ -72,6 +87,8 @@ export class DashboardService {
     private readonly raffleRepository: Repository<Raffle>,
     @InjectRepository(Currency)
     private readonly currencyRepository: Repository<Currency>,
+    @InjectRepository(PaymentMethod)
+    private readonly paymentMethodRepository: Repository<PaymentMethod>,
   ) {}
 
   async getOverview(currencyId?: string) {
@@ -134,8 +151,8 @@ export class DashboardService {
       .addSelect('customer.email', 'email')
       .addSelect('SUM(purchase.ticketQuantity)', 'totalTickets')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .groupBy('customer.uid')
       .addGroupBy('customer.fullName')
@@ -163,6 +180,7 @@ export class DashboardService {
       ticketsSold,
       totalPurchases,
       amountCollectedByCurrency,
+      amountCollectedByPaymentMethod,
       ticketsSoldByDay,
       averageTimeBetweenSalesMinutes,
       sellDuration,
@@ -174,6 +192,7 @@ export class DashboardService {
       this.getRaffleTicketsSold(raffleId),
       this.getRaffleTotalPurchases(raffleId),
       this.getRaffleCollectedAmountByCurrency(raffleId),
+      this.getRaffleCollectedByPaymentMethod(raffleId),
       this.getRaffleTicketsSoldByDay(raffleId),
       this.getAverageTimeBetweenSalesMinutes(raffleId),
       this.getRaffleSellDuration(raffleId, raffle.createdAt),
@@ -189,7 +208,7 @@ export class DashboardService {
       0,
     );
 
-    const amountCollectedInUsd = await this.computeRaffleAmountInUsd(
+    const amountCollectedInUsd = this.computeRaffleAmountInUsd(
       amountCollectedByCurrency,
     );
 
@@ -207,6 +226,7 @@ export class DashboardService {
       participantsWithoutLocation,
       amountCollected,
       amountCollectedByCurrency,
+      amountCollectedByPaymentMethod,
       ticketsSoldByDay,
       averageTimeBetweenSalesMinutes,
       aiApprovedTotal: aiAuditStats.aiApprovedTotal,
@@ -218,32 +238,13 @@ export class DashboardService {
     };
   }
 
-  private async computeRaffleAmountInUsd(
+  private computeRaffleAmountInUsd(
     amountCollectedByCurrency: RaffleAmountByCurrency[],
-  ): Promise<number> {
-    const currencies = await this.currencyRepository.find({
-      order: { name: 'ASC' },
-    });
-
-    const currencyMap = new Map<string, Currency>(
-      currencies.map((currency) => [currency.uid, currency]),
-    );
-
-    const amountCollectedInUsd = amountCollectedByCurrency.reduce(
-      (sumUsd, row) => {
-        const currency = currencyMap.get(row.currencyId);
-        if (!currency) return sumUsd;
-
-        const value = Number(currency.value ?? 0);
-        const rate = value > 0 ? value : 1;
-        const amountInUsd = row.amountCollected / rate;
-
-        return sumUsd + amountInUsd;
-      },
+  ): number {
+    return amountCollectedByCurrency.reduce(
+      (sum, row) => sum + row.amountCollectedInUsd,
       0,
     );
-
-    return amountCollectedInUsd;
   }
 
   private computeChange(current: number, previous: number): Metric {
@@ -273,8 +274,8 @@ export class DashboardService {
       .createQueryBuilder('purchase')
       .select('COUNT(DISTINCT purchase.customerId)', 'count')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .getRawOne<{ count: string | number }>();
 
@@ -286,8 +287,8 @@ export class DashboardService {
       .createQueryBuilder('purchase')
       .select('COALESCE(SUM(purchase.ticketQuantity), 0)', 'sum')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .getRawOne<{ sum: string | number }>();
 
@@ -299,44 +300,245 @@ export class DashboardService {
       .createQueryBuilder('purchase')
       .select('COUNT(purchase.uid)', 'count')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .getRawOne<{ count: string | number }>();
 
     return Number(raw?.count ?? 0);
   }
 
+  private async getRafflePaymentsContext(raffleId: string): Promise<{
+    purchases: Purchase[];
+    paymentMethodsById: Map<string, PaymentMethod>;
+  }> {
+    const purchases = await this.purchaseRepository.find({
+      where: {
+        raffleId,
+        status: Not(In(EXCLUDED_PURCHASE_STATUSES)),
+      },
+    });
+
+    const methodIds = new Set<string>();
+
+    for (const purchase of purchases) {
+      if (purchase.paymentMethodId) {
+        methodIds.add(purchase.paymentMethodId);
+      }
+      for (const pay of purchase.payments ?? []) {
+        const paymentMethodId = String(pay.paymentMethodId ?? '').trim();
+        if (paymentMethodId) {
+          methodIds.add(paymentMethodId);
+        }
+      }
+    }
+
+    if (methodIds.size === 0) {
+      return {
+        purchases,
+        paymentMethodsById: new Map<string, PaymentMethod>(),
+      };
+    }
+
+    const paymentMethods = await this.paymentMethodRepository.find({
+      where: {
+        uid: In(Array.from(methodIds)),
+      },
+    });
+
+    const paymentMethodsById = new Map<string, PaymentMethod>();
+    for (const method of paymentMethods) {
+      paymentMethodsById.set(method.uid, method);
+    }
+
+    return {
+      purchases,
+      paymentMethodsById,
+    };
+  }
+
   private async getRaffleCollectedAmountByCurrency(
     raffleId: string,
   ): Promise<RaffleAmountByCurrency[]> {
-    const [currencies, raw] = await Promise.all([
+    const [currencies, { purchases, paymentMethodsById }] = await Promise.all([
       this.currencyRepository.find({
         order: { name: 'ASC' },
       }),
-      this.purchaseRepository
-        .createQueryBuilder('purchase')
-        .innerJoin('purchase.paymentMethod', 'paymentMethod')
-        .select('paymentMethod.currencyId', 'currencyId')
-        .addSelect('COALESCE(SUM(purchase.totalPaid), 0)', 'sum')
-        .where('purchase.raffleId = :raffleId', { raffleId })
-        .andWhere('purchase.status = :status', {
-          status: PurchaseStatus.VERIFIED,
-        })
-        .groupBy('paymentMethod.currencyId')
-        .getRawMany<{ currencyId: string; sum: string | number }>(),
+      this.getRafflePaymentsContext(raffleId),
     ]);
 
-    const sumByCurrency = new Map<string, number>(
-      raw.map((row) => [row.currencyId, Number(row.sum ?? 0)]),
+    const sumByCurrency = new Map<string, number>();
+
+    for (const purchase of purchases) {
+      const payments = purchase.payments ?? [];
+
+      if (payments.length > 0) {
+        for (const pay of payments) {
+          const effectivePaymentMethodId =
+            (pay.paymentMethodId && String(pay.paymentMethodId).trim()) ||
+            purchase.paymentMethodId;
+          if (!effectivePaymentMethodId) {
+            continue;
+          }
+
+          const paymentMethod = paymentMethodsById.get(effectivePaymentMethodId);
+          const currency = paymentMethod?.currency;
+          if (!currency?.uid) {
+            continue;
+          }
+
+          const amount = Number(pay.amount);
+          if (!Number.isFinite(amount)) {
+            continue;
+          }
+
+          const current = sumByCurrency.get(currency.uid) ?? 0;
+          sumByCurrency.set(currency.uid, current + amount);
+        }
+      } else {
+        const effectivePaymentMethodId = purchase.paymentMethodId;
+        if (!effectivePaymentMethodId) {
+          continue;
+        }
+
+        const paymentMethod = paymentMethodsById.get(effectivePaymentMethodId);
+        const currency = paymentMethod?.currency;
+        if (!currency?.uid) {
+          continue;
+        }
+
+        const amount = Number(purchase.totalAmount ?? 0);
+        if (!Number.isFinite(amount)) {
+          continue;
+        }
+
+        const current = sumByCurrency.get(currency.uid) ?? 0;
+        sumByCurrency.set(currency.uid, current + amount);
+      }
+    }
+
+    return currencies.map((currency) => {
+      const amountCollected = sumByCurrency.get(currency.uid) ?? 0;
+      const value = Number(currency.value ?? 0);
+      const rate = value > 0 ? value : 1;
+      return {
+        currencyId: currency.uid,
+        currencyName: currency.name,
+        currencySymbol: currency.symbol,
+        amountCollected,
+        exchangeRate: rate,
+        amountCollectedInUsd: amountCollected / rate,
+      };
+    });
+  }
+
+  private async getRaffleCollectedByPaymentMethod(
+    raffleId: string,
+  ): Promise<RaffleAmountByPaymentMethod[]> {
+    const { purchases, paymentMethodsById } =
+      await this.getRafflePaymentsContext(raffleId);
+
+    const aggregates = new Map<
+      string,
+      {
+        paymentMethod: PaymentMethod;
+        amountCollected: number;
+        purchaseIds: Set<string>;
+      }
+    >();
+
+    for (const purchase of purchases) {
+      const payments = purchase.payments ?? [];
+
+      if (payments.length > 0) {
+        for (const pay of payments) {
+          const effectivePaymentMethodId =
+            (pay.paymentMethodId && String(pay.paymentMethodId).trim()) ||
+            purchase.paymentMethodId;
+          if (!effectivePaymentMethodId) {
+            continue;
+          }
+
+          const paymentMethod = paymentMethodsById.get(effectivePaymentMethodId);
+          if (!paymentMethod) {
+            continue;
+          }
+
+          const amount = Number(pay.amount);
+          if (!Number.isFinite(amount)) {
+            continue;
+          }
+
+          let aggregate = aggregates.get(paymentMethod.uid);
+          if (!aggregate) {
+            aggregate = {
+              paymentMethod,
+              amountCollected: 0,
+              purchaseIds: new Set<string>(),
+            };
+            aggregates.set(paymentMethod.uid, aggregate);
+          }
+
+          aggregate.amountCollected += amount;
+          aggregate.purchaseIds.add(purchase.uid);
+        }
+      } else {
+        const effectivePaymentMethodId = purchase.paymentMethodId;
+        if (!effectivePaymentMethodId) {
+          continue;
+        }
+
+        const paymentMethod = paymentMethodsById.get(effectivePaymentMethodId);
+        if (!paymentMethod) {
+          continue;
+        }
+
+        const amount = Number(purchase.totalAmount ?? 0);
+        if (!Number.isFinite(amount)) {
+          continue;
+        }
+
+        let aggregate = aggregates.get(paymentMethod.uid);
+        if (!aggregate) {
+          aggregate = {
+            paymentMethod,
+            amountCollected: 0,
+            purchaseIds: new Set<string>(),
+          };
+          aggregates.set(paymentMethod.uid, aggregate);
+        }
+
+        aggregate.amountCollected += amount;
+        aggregate.purchaseIds.add(purchase.uid);
+      }
+    }
+
+    const result: RaffleAmountByPaymentMethod[] = [];
+
+    for (const aggregate of aggregates.values()) {
+      const { paymentMethod, amountCollected, purchaseIds } = aggregate;
+      const currency = paymentMethod.currency;
+      const value = Number(currency?.value ?? 0);
+      const rate = value > 0 ? value : 1;
+
+      result.push({
+        paymentMethodId: paymentMethod.uid,
+        paymentMethodName: paymentMethod.name,
+        currencySymbol: currency?.symbol ?? '',
+        amountCollected,
+        exchangeRate: rate,
+        amountCollectedInUsd: amountCollected / rate,
+        totalPurchases: purchaseIds.size,
+      });
+    }
+
+    result.sort((a, b) =>
+      a.paymentMethodName.localeCompare(b.paymentMethodName, 'es', {
+        sensitivity: 'base',
+      }),
     );
 
-    return currencies.map((currency) => ({
-      currencyId: currency.uid,
-      currencyName: currency.name,
-      currencySymbol: currency.symbol,
-      amountCollected: sumByCurrency.get(currency.uid) ?? 0,
-    }));
+    return result;
   }
 
   private async getRaffleTicketsSoldByDay(
@@ -347,8 +549,8 @@ export class DashboardService {
       .select('purchase.submittedAt', 'submittedAt')
       .addSelect('purchase.ticketQuantity', 'ticketQuantity')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .andWhere('purchase.submittedAt IS NOT NULL')
       .orderBy('purchase.submittedAt', 'ASC')
@@ -390,8 +592,8 @@ export class DashboardService {
       .createQueryBuilder('purchase')
       .select('COALESCE(purchase.verifiedAt, purchase.submittedAt)', 'soldAt')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .andWhere('COALESCE(purchase.verifiedAt, purchase.submittedAt) IS NOT NULL')
       .orderBy('COALESCE(purchase.verifiedAt, purchase.submittedAt)', 'ASC')
@@ -431,8 +633,8 @@ export class DashboardService {
       .createQueryBuilder('purchase')
       .select('MAX(COALESCE(purchase.verifiedAt, purchase.submittedAt))', 'soldUntilAt')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .getRawOne<{ soldUntilAt: string | Date | null }>();
 
@@ -467,8 +669,8 @@ export class DashboardService {
       .addSelect('COUNT(purchase.uid)', 'purchasesCount')
       .addSelect('COUNT(DISTINCT purchase.customerId)', 'participantsCount')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .andWhere("customer.location->>'state' IS NOT NULL")
       .andWhere("customer.location->>'state' != ''")
@@ -501,8 +703,8 @@ export class DashboardService {
       .innerJoin('purchase.customer', 'customer')
       .select('COUNT(DISTINCT purchase.customerId)', 'count')
       .where('purchase.raffleId = :raffleId', { raffleId })
-      .andWhere('purchase.status = :status', {
-        status: PurchaseStatus.VERIFIED,
+      .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
       .andWhere(
         "(customer.location->>'state' IS NULL OR customer.location->>'state' = '')",
