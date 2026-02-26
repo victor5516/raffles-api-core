@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Purchase, PurchaseStatus } from '../entities/purchase.entity';
+import { RaffleStatus } from 'src/modules/raffles/entities/raffle.entity';
 import { MailService } from '../../mail/mail.service';
 
 interface PurchaseCreatedEvent {
@@ -45,6 +46,13 @@ export class PurchasesMailListener {
         return;
       }
 
+      if (!purchase.raffle || purchase.raffle.status !== RaffleStatus.ACTIVE) {
+        this.logger.warn(
+          `Raffle for purchase ${event.purchaseId} is not active, skipping email (raffleId=${purchase.raffle?.uid ?? purchase.raffleId})`,
+        );
+        return;
+      }
+
       await this.mailService.sendPurchaseCreated(purchase, purchase.customer);
     } catch (error) {
       // Log error but don't throw to avoid interrupting the purchase flow
@@ -66,6 +74,13 @@ export class PurchasesMailListener {
       if (!purchase || !purchase.customer) {
         this.logger.warn(
           `Purchase ${event.purchaseId} or customer not found, skipping email`,
+        );
+        return;
+      }
+
+      if (!purchase.raffle || purchase.raffle.status !== RaffleStatus.ACTIVE) {
+        this.logger.warn(
+          `Raffle for purchase ${event.purchaseId} is not active, skipping status change email (raffleId=${purchase.raffle?.uid ?? purchase.raffleId}, status=${event.status})`,
         );
         return;
       }
