@@ -1,13 +1,12 @@
-import {
-  Injectable,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectEntityManager } from '@nestjs/typeorm';
 import { EntityManager } from 'typeorm';
 import { BankStatementParserService } from './bank-statement-parser.service';
 import { TicketAllocationService } from './ticket-allocation.service';
-import { BankTransaction, ReconciliationResult } from '../dto/reconciliation.dto';
+import {
+  BankTransaction,
+  ReconciliationResult,
+} from '../dto/reconciliation.dto';
 import {
   Purchase,
   PurchaseStatus,
@@ -38,8 +37,10 @@ export class ReconciliationService {
       throw new BadRequestException('raffleId es requerido');
     }
 
-    const bankTransactions =
-      await this.bankParser.parseStatement(fileBuffer, mimeType);
+    const bankTransactions = await this.bankParser.parseStatement(
+      fileBuffer,
+      mimeType,
+    );
 
     if (!bankTransactions.length) {
       throw new BadRequestException(
@@ -71,7 +72,8 @@ export class ReconciliationService {
 
     // Debug: cantidad de matches (independiente del estatus verified)
     this.logger.debug(
-      `[Reconcile] Matches: ${matched.length} | Banco sin match: ${unmatchedBank.length} | DB sin match: ${unmatchedDb.length} | Total banco: ${totalBank} | Total DB: ${totalDb} | A auto-verificar: ${purchasesToAutoVerify.length}`,
+      `[Reconcile] Matches: ${matched.length} | Banco sin match: ${unmatchedBank.length} | DB sin match: ${unmatchedDb.length} | Total banco: ${totalBank} | Total DB: ${totalDb} | A auto-verificar: ${purchasesToAutoVerify.length}
+       | Canitdad Bancaria: ${bankTransactions.length} `,
     );
 
     // Auto-verificación de compras que hicieron match
@@ -79,13 +81,12 @@ export class ReconciliationService {
     const updatable = purchasesToAutoVerify.filter(
       (p) =>
         p.status === PurchaseStatus.PENDING ||
-        p.status === PurchaseStatus.MANUAL_REVIEW
+        p.status === PurchaseStatus.MANUAL_REVIEW,
     );
 
     // Compras ya verified pero sin doble check: marcar auditReviewedAt
     const forAuditStamp = purchasesToAutoVerify.filter(
-      (p) =>
-        p.status === PurchaseStatus.VERIFIED && p.auditReviewedAt == null,
+      (p) => p.status === PurchaseStatus.VERIFIED && p.auditReviewedAt == null,
     );
 
     for (const purchase of updatable) {
@@ -192,6 +193,7 @@ export class ReconciliationService {
    * transacción coincide en el sufijo.
    * Ejemplo: ref DB="005101282438", ref banco="000084731282438" → sufijo común "1282438" (7) → match.
    */
+  private readonly AMOUNT_TOLERANCE = 1.0;
   private readonly MIN_SUFFIX_MATCH_LENGTH = 7;
 
   private isReferenceMatch(
@@ -199,55 +201,71 @@ export class ReconciliationService {
     normalizedRefB: string,
   ): boolean {
     if (!normalizedRefA || !normalizedRefB) return false;
-    return this.commonSuffixLength(normalizedRefA, normalizedRefB) >= this.MIN_SUFFIX_MATCH_LENGTH;
+    return (
+      this.commonSuffixLength(normalizedRefA, normalizedRefB) >=
+      this.MIN_SUFFIX_MATCH_LENGTH
+    );
   }
 
-  /**
-   * Extrae referencias de una compra siguiendo el orden de prioridad:
-   * 1. ai_analysis_result->data->reference (referencia extraída por IA del OCR)
-   * 2. payments[] array (cada pago tiene su referencia)
-   * Retorna un array de { reference, amount } para poder hacer matching con cada pago individual
-   */
   private extractPurchaseReferences(purchase: Purchase): Array<{
     reference: string;
     amount: number;
   }> {
     const refs: Array<{ reference: string; amount: number }> = [];
+    const seen = new Set<string>();
+    const defaultAmount = Number(
+      purchase.totalPaid ?? purchase.totalAmount ?? 0,
+    );
 
-    // Prioridad 1: ai_analysis_result->data->reference
-    if (
-      purchase.aiAnalysisResult &&
-      typeof purchase.aiAnalysisResult === 'object' &&
-      purchase.aiAnalysisResult.data &&
-      typeof purchase.aiAnalysisResult.data === 'object' &&
-      purchase.aiAnalysisResult.data.reference
-    ) {
-      const aiRef = String(purchase.aiAnalysisResult.data.reference);
-      const aiAmount =
-        purchase.aiAnalysisResult.data.amount ??
-        purchase.totalPaid ??
-        purchase.totalAmount ??
-        0;
-      refs.push({
-        reference: aiRef,
-        amount: Number(aiAmount),
-      });
-      return refs; // Si tiene AI result, solo usamos ese
+    const tryAdd = (ref: string | null | undefined, amount: number) => {
+      if (!ref) return;
+      const norm = this.normalizeRef(ref);
+      if (!norm || seen.has(norm)) return;
+      seen.add(norm);
+      refs.push({ reference: String(ref), amount });
+    };
+
+    // Candidato 1: ai_analysis_result->data->reference
+    const aiResult = purchase.aiAnalysisResult as
+      | { data?: { reference?: string; amount?: number } }
+      | null
+      | undefined;
+    if (aiResult?.data?.reference) {
+      const aiAmount = Number(
+        aiResult.data.amount ?? purchase.totalPaid ?? purchase.totalAmount ?? 0,
+      );
+      tryAdd(String(aiResult.data.reference), aiAmount);
     }
 
-    // Prioridad 2: payments[] array
-    if (purchase.payments && Array.isArray(purchase.payments)) {
+    // Candidato 2: payments[]
+    if (Array.isArray(purchase.payments)) {
       for (const payment of purchase.payments) {
-        if (payment.reference && payment.amount) {
-          refs.push({
-            reference: String(payment.reference),
-            amount: Number(payment.amount),
-          });
+        if (payment.reference) {
+          tryAdd(
+            String(payment.reference),
+            Number(payment.amount ?? defaultAmount),
+          );
         }
       }
     }
 
+    // Candidato 3: bankReference (campo legacy)
+    if (purchase.bankReference) {
+      tryAdd(String(purchase.bankReference), defaultAmount);
+    }
+
     return refs;
+  }
+
+  private extractRefFromDescription(description: string): string {
+    if (!description) return '';
+    const matches = description.match(/\d{7,}/g);
+    if (!matches || matches.length === 0) return '';
+    return matches.reduce(
+      (longest, current) =>
+        current.length > longest.length ? current : longest,
+      '',
+    );
   }
 
   private matchTransactions(
@@ -277,7 +295,9 @@ export class ReconciliationService {
       }
       totalBank += bankAmount;
 
-      const normBankRef = this.normalizeRef(tx.reference);
+      const bankRefRaw =
+        tx.reference || this.extractRefFromDescription(tx.description);
+      const normBankRef = this.normalizeRef(bankRefRaw);
       if (!normBankRef) {
         unmatchedBank.push(tx);
         continue;
@@ -299,15 +319,18 @@ export class ReconciliationService {
         }
 
         // Buscar match en cada referencia extraída
-        for (const { reference: purchaseRef, amount: purchaseAmount } of purchaseRefs) {
+        for (const {
+          reference: purchaseRef,
+          amount: purchaseAmount,
+        } of purchaseRefs) {
           const normPurchaseRef = this.normalizeRef(purchaseRef);
           if (!normPurchaseRef) continue;
 
           // Comparar montos (tolerancia 0.01)
           const amountDiff = Math.abs(bankAmount - purchaseAmount);
-          const amountMatches = amountDiff <= 0.01;
+          const amountMatches = amountDiff <= this.AMOUNT_TOLERANCE;
 
-          // Comparar referencias con matching parcial (mínimo 4 caracteres)
+          // Comparar referencias por sufijo (mínimo MIN_SUFFIX_MATCH_LENGTH = 7 caracteres)
           const refMatches = this.isReferenceMatch(
             normBankRef,
             normPurchaseRef,
@@ -315,12 +338,10 @@ export class ReconciliationService {
 
           if (amountMatches && refMatches) {
             found = purchase;
-            const signedDiff = Number(
-              (bankAmount - purchaseAmount).toFixed(2),
-            );
+            const signedDiff = Number((bankAmount - purchaseAmount).toFixed(2));
             matched.push({
               purchaseId: purchase.uid,
-              bankRef: tx.reference,
+              bankRef: bankRefRaw,
               amount: bankAmount,
               diff: signedDiff,
             });
@@ -354,5 +375,3 @@ export class ReconciliationService {
     };
   }
 }
-
-

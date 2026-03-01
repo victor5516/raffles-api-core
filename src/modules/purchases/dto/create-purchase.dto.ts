@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsArray,
   ArrayMinSize,
+  ArrayMaxSize,
   IsInt,
   ValidateNested,
 } from 'class-validator';
@@ -224,4 +225,26 @@ export class CreatePurchaseDto {
   @ValidateNested({ each: true })
   @Type(() => PaymentItemDto)
   payments?: PaymentItemDto[];
+
+  @ApiPropertyOptional({
+    description: 'Códigos de cupones a canjear. Cada cupón cubre 1 ticket.',
+    example: ['A3K9BZ', 'X7T2QR'],
+    type: [String],
+    isArray: true,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(100)
+  couponCodes?: string[];
 }

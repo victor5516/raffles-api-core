@@ -34,7 +34,8 @@ export class RaffleTopLocationDto {
   state: string;
 
   @ApiProperty({
-    description: 'Ciudad del participante (opcional, puede ser null si solo se guarda state)',
+    description:
+      'Ciudad del participante (opcional, puede ser null si solo se guarda state)',
     example: 'San Cristóbal',
     nullable: true,
   })

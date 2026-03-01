@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
 
-export class AddSpreadsheetIdToRaffle1770500000000
-  implements MigrationInterface
-{
+export class AddSpreadsheetIdToRaffle1770500000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.addColumn(
       'raffle',
@@ -30,4 +28,3 @@ export class AddSpreadsheetIdToRaffle1770500000000
     await queryRunner.dropColumn('raffle', 'spreadsheet_id');
   }
 }
-

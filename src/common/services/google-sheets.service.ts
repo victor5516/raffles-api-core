@@ -406,7 +406,7 @@ export class GoogleSheetsService implements OnModuleInit {
     context?: { spreadsheetId?: string },
   ): Promise<T> {
     let attempt = 0;
-    // eslint-disable-next-line no-constant-condition
+
     while (true) {
       try {
         return await fn();
@@ -432,7 +432,7 @@ export class GoogleSheetsService implements OnModuleInit {
         }
 
         const delayMs = Math.min(
-          (2 ** attempt) * 1000 + Math.floor(Math.random() * 1000),
+          2 ** attempt * 1000 + Math.floor(Math.random() * 1000),
           this.maxBackoffMs,
         );
 

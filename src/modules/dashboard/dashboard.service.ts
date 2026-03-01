@@ -12,7 +12,10 @@ import { Currency } from '../currencies/entities/currency.entity';
 import { PaymentMethod } from '../payments/entities/payment-method.entity';
 import { RaffleStatsResponseDto } from './dto/raffle-stats-response.dto';
 
-const EXCLUDED_PURCHASE_STATUSES = [PurchaseStatus.REJECTED, PurchaseStatus.DUPLICATED];
+const EXCLUDED_PURCHASE_STATUSES = [
+  PurchaseStatus.REJECTED,
+  PurchaseStatus.DUPLICATED,
+];
 
 type Metric = {
   current: number;
@@ -170,7 +173,9 @@ export class DashboardService {
   }
 
   async getRaffleStats(raffleId: string): Promise<RaffleStatsResponseDto> {
-    const raffle = await this.raffleRepository.findOne({ where: { uid: raffleId } });
+    const raffle = await this.raffleRepository.findOne({
+      where: { uid: raffleId },
+    });
     if (!raffle) {
       throw new NotFoundException('Raffle not found');
     }
@@ -219,7 +224,9 @@ export class DashboardService {
       ticketsSold,
       totalPurchases,
       averageTicketsPerPurchase:
-        totalPurchases > 0 ? Number((ticketsSold / totalPurchases).toFixed(2)) : null,
+        totalPurchases > 0
+          ? Number((ticketsSold / totalPurchases).toFixed(2))
+          : null,
       salesPercentage,
       sellDuration,
       topLocations,
@@ -381,7 +388,9 @@ export class DashboardService {
             continue;
           }
 
-          const paymentMethod = paymentMethodsById.get(effectivePaymentMethodId);
+          const paymentMethod = paymentMethodsById.get(
+            effectivePaymentMethodId,
+          );
           const currency = paymentMethod?.currency;
           if (!currency?.uid) {
             continue;
@@ -459,7 +468,9 @@ export class DashboardService {
             continue;
           }
 
-          const paymentMethod = paymentMethodsById.get(effectivePaymentMethodId);
+          const paymentMethod = paymentMethodsById.get(
+            effectivePaymentMethodId,
+          );
           if (!paymentMethod) {
             continue;
           }
@@ -554,7 +565,10 @@ export class DashboardService {
       })
       .andWhere('purchase.submittedAt IS NOT NULL')
       .orderBy('purchase.submittedAt', 'ASC')
-      .getRawMany<{ submittedAt: string | Date; ticketQuantity: string | number }>();
+      .getRawMany<{
+        submittedAt: string | Date;
+        ticketQuantity: string | number;
+      }>();
 
     const dayFormatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'America/Caracas',
@@ -595,7 +609,9 @@ export class DashboardService {
       .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
         excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
       })
-      .andWhere('COALESCE(purchase.verifiedAt, purchase.submittedAt) IS NOT NULL')
+      .andWhere(
+        'COALESCE(purchase.verifiedAt, purchase.submittedAt) IS NOT NULL',
+      )
       .orderBy('COALESCE(purchase.verifiedAt, purchase.submittedAt)', 'ASC')
       .getRawMany<{ soldAt: string | Date }>();
 
@@ -631,7 +647,10 @@ export class DashboardService {
   ): Promise<RaffleSellDuration> {
     const raw = await this.purchaseRepository
       .createQueryBuilder('purchase')
-      .select('MAX(COALESCE(purchase.verifiedAt, purchase.submittedAt))', 'soldUntilAt')
+      .select(
+        'MAX(COALESCE(purchase.verifiedAt, purchase.submittedAt))',
+        'soldUntilAt',
+      )
       .where('purchase.raffleId = :raffleId', { raffleId })
       .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
         excludedStatuses: EXCLUDED_PURCHASE_STATUSES,
@@ -664,7 +683,7 @@ export class DashboardService {
       .createQueryBuilder('purchase')
       .innerJoin('purchase.customer', 'customer')
       .select("customer.location->>'state'", 'state')
-      .addSelect("NULL", 'city')
+      .addSelect('NULL', 'city')
       .addSelect('COALESCE(SUM(purchase.ticketQuantity), 0)', 'ticketsSold')
       .addSelect('COUNT(purchase.uid)', 'purchasesCount')
       .addSelect('COUNT(DISTINCT purchase.customerId)', 'participantsCount')
@@ -800,7 +819,9 @@ export class DashboardService {
         .where('raffle.status = :raffleStatus', {
           raffleStatus: RaffleStatus.ACTIVE,
         })
-        .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .andWhere('purchase.status = :status', {
+          status: PurchaseStatus.VERIFIED,
+        })
         .andWhere(
           args.currencyId ? 'paymentMethod.currencyId = :currencyId' : '1=1',
           { currencyId: args.currencyId },
@@ -815,7 +836,9 @@ export class DashboardService {
         .where('raffle.status = :raffleStatus', {
           raffleStatus: RaffleStatus.ACTIVE,
         })
-        .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .andWhere('purchase.status = :status', {
+          status: PurchaseStatus.VERIFIED,
+        })
         .andWhere(
           args.currencyId ? 'paymentMethod.currencyId = :currencyId' : '1=1',
           { currencyId: args.currencyId },
@@ -846,7 +869,9 @@ export class DashboardService {
         .where('raffle.status = :raffleStatus', {
           raffleStatus: RaffleStatus.ACTIVE,
         })
-        .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .andWhere('purchase.status = :status', {
+          status: PurchaseStatus.VERIFIED,
+        })
         // Totales acumulados: NO filtramos por "now" para evitar discrepancias de timezone/reloj.
         .getRawOne<{ sum: string | number }>(),
       this.purchaseRepository
@@ -856,7 +881,9 @@ export class DashboardService {
         .where('raffle.status = :raffleStatus', {
           raffleStatus: RaffleStatus.ACTIVE,
         })
-        .andWhere('purchase.status = :status', { status: PurchaseStatus.VERIFIED })
+        .andWhere('purchase.status = :status', {
+          status: PurchaseStatus.VERIFIED,
+        })
         .andWhere(
           'COALESCE(purchase.verifiedAt, purchase.submittedAt) <= :end',
           { end: args.endOfYesterday },

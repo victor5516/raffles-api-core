@@ -42,7 +42,8 @@ export class MailService {
 
     this.resend = new Resend(apiKey);
 
-    this.brandName = this.configService.get<string>('MAIL_BRAND_NAME') || 'Rifas';
+    this.brandName =
+      this.configService.get<string>('MAIL_BRAND_NAME') || 'Rifas';
     this.logoUrl =
       this.configService.get<string>('MAIL_LOGO_URL') ||
       'https://www.simonboli.com/assets/bolidos-Cwxz6QCE.png';
@@ -52,7 +53,8 @@ export class MailService {
       `"${this.brandName}" <no-reply@simonboli.com>`;
 
     this.replyToEmail =
-      this.configService.get<string>('MAIL_REPLY_TO') || 'soporte@simonboli.com';
+      this.configService.get<string>('MAIL_REPLY_TO') ||
+      'soporte@simonboli.com';
 
     this.bccAddress =
       this.configService.get<string>('MAIL_BCC_ADDRESS') ||

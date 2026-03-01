@@ -53,4 +53,3 @@ export interface ReconciliationResult {
   unmatchedBank: BankTransaction[];
   metadata: ReconciliationResultMetadata;
 }
-

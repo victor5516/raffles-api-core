@@ -155,7 +155,10 @@ export class PurchasesCron {
       let syncedSheetsTotal = 0;
       let totalRows = 0;
 
-      for (const [spreadsheetId, spreadsheetPurchases] of purchasesBySpreadsheet) {
+      for (const [
+        spreadsheetId,
+        spreadsheetPurchases,
+      ] of purchasesBySpreadsheet) {
         const byPaymentMethod = this.buildRowsByPaymentMethod(
           spreadsheetPurchases,
           sheetNameByPaymentMethodId,
@@ -387,9 +390,8 @@ export class PurchasesCron {
     byPaymentMethod: Map<string, SheetSyncRow[]>,
     sheetNameByPaymentMethodId: Map<string, string>,
   ): Promise<void> {
-    const existingSheetNames = await this.googleSheetsService.getSheetNames(
-      spreadsheetId,
-    );
+    const existingSheetNames =
+      await this.googleSheetsService.getSheetNames(spreadsheetId);
     if (existingSheetNames.length === 0) {
       return;
     }
@@ -473,7 +475,9 @@ export class PurchasesCron {
     // Include sheet names directly derived from the purchases being processed.
     for (const p of purchases) {
       candidateSheetNames.add(
-        toSheetName(p.paymentMethod?.sheetName ?? p.paymentMethod?.name ?? 'Unknown'),
+        toSheetName(
+          p.paymentMethod?.sheetName ?? p.paymentMethod?.name ?? 'Unknown',
+        ),
       );
 
       for (const pay of p.payments ?? []) {

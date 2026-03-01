@@ -10,7 +10,13 @@ import { PaymentMethod } from '../payments/entities/payment-method.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Purchase, Customer, Raffle, Currency, PaymentMethod]),
+    TypeOrmModule.forFeature([
+      Purchase,
+      Customer,
+      Raffle,
+      Currency,
+      PaymentMethod,
+    ]),
   ],
   controllers: [DashboardController],
   providers: [DashboardService],

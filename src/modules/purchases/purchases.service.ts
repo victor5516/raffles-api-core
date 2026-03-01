@@ -53,6 +53,8 @@ import {
 import { PurchasesExportService } from './services/purchases-export.service';
 import { PurchaseVerificationService } from './services/purchase-verification.service';
 import { TicketAllocationService } from './services/ticket-allocation.service';
+import { CouponsService } from '../coupons/coupons.service';
+import { Coupon } from '../coupons/entities/coupon.entity';
 
 @Injectable()
 export class PurchasesService {
@@ -74,6 +76,7 @@ export class PurchasesService {
     private readonly exportService: PurchasesExportService,
     private readonly verificationService: PurchaseVerificationService,
     private readonly allocationService: TicketAllocationService,
+    private readonly couponsService: CouponsService,
   ) {}
 
   // ===========================================================================
@@ -112,7 +115,29 @@ export class PurchasesService {
         raffle.promotionStrategy ?? null,
         raffle.promotionConfig ?? null,
       );
-      const totalAmountToPersist = Number(calculatedTotal.toFixed(2));
+
+      // 2b. Process coupons (validated + locked inside transaction)
+      let validatedCoupons: Coupon[] = [];
+      let couponDiscount = 0;
+      if (createDto.couponCodes && createDto.couponCodes.length > 0) {
+        const uniqueCodes = [
+          ...new Set(createDto.couponCodes.map((c) => c.trim().toUpperCase())),
+        ];
+        if (uniqueCodes.length > createDto.ticket_quantity) {
+          throw new BadRequestException(
+            `No se pueden usar más cupones (${uniqueCodes.length}) que tickets comprados (${createDto.ticket_quantity})`,
+          );
+        }
+        validatedCoupons = await this.couponsService.validateAndLock(
+          uniqueCodes,
+          manager,
+        );
+        couponDiscount = validatedCoupons.length * unitPriceInPaymentCurrency;
+      }
+
+      const totalAmountToPersist = Number(
+        Math.max(0, calculatedTotal - couponDiscount).toFixed(2),
+      );
       const requestedTotalAmount = Number(createDto.totalAmount);
       const totalDiff = Math.abs(requestedTotalAmount - totalAmountToPersist);
       if (Number.isFinite(requestedTotalAmount) && totalDiff > 0.01) {
@@ -125,7 +150,7 @@ export class PurchasesService {
         (unitPriceInPaymentCurrency * createDto.ticket_quantity).toFixed(2),
       );
       const discountAmount = Number(
-        (originalAmount - totalAmountToPersist).toFixed(2),
+        (originalAmount - Number(calculatedTotal.toFixed(2))).toFixed(2),
       );
       const promotionSnapshot: PromotionSnapshot | null =
         discountAmount > 0.01 && raffle.promotionStrategy
@@ -211,10 +236,37 @@ export class PurchasesService {
         totalPaid,
       });
 
-      return {
-        purchase: await manager.save(Purchase, purchase),
-        paymentMethod,
-      };
+      const savedPurchase = await manager.save(Purchase, purchase);
+
+      // 8b. Redeem coupons
+      if (validatedCoupons.length > 0) {
+        await this.couponsService.redeemCoupons(
+          validatedCoupons,
+          savedPurchase.uid,
+          manager,
+        );
+      }
+
+      // 8c. Auto-verify if fully covered by coupons
+      if (totalAmountToPersist === 0 && validatedCoupons.length > 0) {
+        savedPurchase.status = PurchaseStatus.VERIFIED;
+        savedPurchase.verifiedAt = new Date();
+        savedPurchase.verificationSource = VerificationSource.BY_SYSTEM;
+        savedPurchase.exportedToSheets = false;
+        if (
+          !savedPurchase.ticketNumbers ||
+          savedPurchase.ticketNumbers.length === 0
+        ) {
+          await this.allocationService.assignRandomNumbers(
+            manager,
+            savedPurchase.raffleId,
+            savedPurchase,
+          );
+        }
+        await manager.save(Purchase, savedPurchase);
+      }
+
+      return { purchase: savedPurchase, paymentMethod };
     });
 
     const createdPurchase = result.purchase;
@@ -954,7 +1006,7 @@ export class PurchasesService {
               fullName: purchase.verifiedByAdmin.fullName,
             }
           : null,
-          aiAnalysisResult: purchase?.aiAnalysisResult?.data ?? null,
+        aiAnalysisResult: purchase?.aiAnalysisResult?.data ?? null,
       };
     });
 
@@ -992,6 +1044,8 @@ export class PurchasesService {
       evidenceUrl: this.s3Service.getCdnUrl(p.evidenceUrl) ?? p.evidenceUrl,
     }));
 
+    const redeemedCoupons = await this.couponsService.findByPurchaseId(uid);
+
     const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
     return {
       ...purchase,
@@ -999,6 +1053,7 @@ export class PurchasesService {
       paymentScreenshotUrl:
         paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
       payments: paymentsWithCdn,
+      redeemedCoupons,
       raffle: purchase.raffle
         ? {
             ...purchase.raffle,
@@ -1312,6 +1367,18 @@ export class PurchasesService {
   }
 
   private async notifyPostPurchase(purchase: Purchase, eventType: string) {
+    // If already verified (e.g. fully covered by coupons), skip SQS
+    if (purchase.status === PurchaseStatus.VERIFIED) {
+      this.eventEmitter.emit('purchase.status_changed', {
+        type: 'verified',
+        msg: 'Purchase auto-verified via coupons',
+        raffleId: purchase.raffleId,
+        purchaseId: purchase.uid,
+        status: PurchaseStatus.VERIFIED,
+      });
+      return;
+    }
+
     // 1. Send to SQS (only when payment method has AI verification enabled)
     if (purchase.paymentMethod?.aiVerificationEnabled !== false) {
       try {

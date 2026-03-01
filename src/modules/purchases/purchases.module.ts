@@ -16,6 +16,7 @@ import { TicketAllocationService } from './services/ticket-allocation.service';
 import { BankStatementParserService } from './services/bank-statement-parser.service';
 import { ReconciliationService } from './services/reconciliation.service';
 import { MailModule } from '../mail/mail.module';
+import { CouponsModule } from '../coupons/coupons.module';
 import { PurchasesMailListener } from './listeners/purchases-mail.listener';
 
 @Module({
@@ -29,6 +30,7 @@ import { PurchasesMailListener } from './listeners/purchases-mail.listener';
       Currency,
     ]),
     MailModule,
+    CouponsModule,
   ],
   controllers: [PurchasesController],
   providers: [
