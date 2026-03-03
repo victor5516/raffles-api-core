@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   ReconciliationJob,
@@ -17,6 +17,7 @@ import {
   ReconciliationProcessEvent,
 } from '../events/reconciliation.events';
 import { ReconciliationJobResponseDto } from '../dto/reconciliation-job.dto';
+import { Purchase } from '../entities/purchase.entity';
 
 @Injectable()
 export class ReconciliationJobService implements OnModuleInit {
@@ -129,6 +130,34 @@ export class ReconciliationJobService implements OnModuleInit {
 
     const result = job.result;
 
+    // Para jobs antiguos sin snapshot, enriquecer desde DB
+    const legacyMatches = (result.matched ?? []).filter(
+      (m) => !m.purchaseSnapshot,
+    );
+    let purchaseById: Record<string, Purchase> = {};
+    if (legacyMatches.length > 0) {
+      const ids = Array.from(
+        new Set(
+          legacyMatches
+            .map((m) => m.purchaseId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+      if (ids.length > 0) {
+        const purchases = await this.jobRepo.manager.find(Purchase, {
+          where: { uid: In(ids) },
+          relations: ['customer'],
+        });
+        purchaseById = purchases.reduce<Record<string, Purchase>>(
+          (acc, p) => {
+            acc[p.uid] = p;
+            return acc;
+          },
+          {},
+        );
+      }
+    }
+
     const mappedMatched = (result.matched ?? []).map((m) => {
       if (m.purchaseSnapshot && m.bankTransaction) {
         return {
@@ -146,11 +175,17 @@ export class ReconciliationJobService implements OnModuleInit {
         };
       }
 
+      const purchase = m.purchaseId ? purchaseById[m.purchaseId] : undefined;
+      const customerName = purchase?.customer?.fullName ?? '';
+      const totalAmount = Number(
+        purchase?.totalPaid ?? purchase?.totalAmount ?? m.amount,
+      );
+
       return {
         purchase: {
           uid: m.purchaseId,
-          customer: { name: '' },
-          totalAmount: m.amount,
+          customer: { name: customerName },
+          totalAmount,
         },
         bankTransaction: {
           date: '',
