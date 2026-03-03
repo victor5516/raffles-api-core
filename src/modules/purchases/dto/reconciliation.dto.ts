@@ -1,4 +1,4 @@
-import { Purchase } from '../entities/purchase.entity';
+import { Purchase, PurchaseStatus } from '../entities/purchase.entity';
 
 export interface BankTransaction {
   /**
@@ -28,6 +28,13 @@ export interface ReconciliationResultMatch {
   bankRef: string;
   amount: number;
   diff: number;
+  purchaseSnapshot?: {
+    uid: string;
+    customerName: string;
+    totalAmount: number;
+    status: PurchaseStatus;
+  };
+  bankTransaction?: BankTransaction;
 }
 
 export interface ReconciliationResultMetadata {

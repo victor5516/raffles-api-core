@@ -51,11 +51,13 @@ export class ReconciliationService {
     const { minDate, maxDate } = this.getDateRange(bankTransactions);
 
     // Solo filtramos por rifa y método de pago; el match es por monto y referencia
+    // Cargamos también el cliente para poder incluir snapshots en los resultados.
     const dbPurchases = await this.entityManager.find(Purchase, {
       where: {
         raffleId,
         paymentMethodId,
       },
+      relations: ['customer'],
       order: {
         submittedAt: 'ASC',
       },
@@ -344,6 +346,15 @@ export class ReconciliationService {
               bankRef: bankRefRaw,
               amount: bankAmount,
               diff: signedDiff,
+              purchaseSnapshot: {
+                uid: purchase.uid,
+                customerName: purchase.customer?.fullName ?? '',
+                totalAmount: Number(
+                  purchase.totalPaid ?? purchase.totalAmount ?? 0,
+                ),
+                status: purchase.status,
+              },
+              bankTransaction: tx,
             });
             purchasesToAutoVerify.push(purchase);
             matchedPurchaseIds.add(purchase.uid);

@@ -138,6 +138,22 @@ const amountMatches = amountDiff <= 0.01;
 
 ---
 
+---
+
+## Estado actual de implementación (Feb 2026)
+
+Las siguientes mejoras propuestas en este documento **ya fueron implementadas** en `reconciliation.service.ts`:
+
+| Mejora | Estado | Detalle |
+|--------|--------|---------|
+| Causa 4: `bankReference` ignorado | ✅ Implementado | `extractPurchaseReferences()` incluye `purchase.bankReference` como Candidato 3 (líneas 252–256) |
+| Causa 5: Sin fallback de descripción bancaria | ✅ Implementado | `matchTransactions()` hace `tx.reference \|\| this.extractRefFromDescription(tx.description)` (líneas 298–304). `extractRefFromDescription()` extrae la secuencia numérica más larga (≥7 dígitos) del campo descripción |
+| Causa 2: AI early-return ignora `payments[]` | ✅ Implementado | `extractPurchaseReferences()` ya NO tiene early-return. Colecta candidatos de: (1) `aiAnalysisResult.data.reference`, (2) `payments[].reference`, (3) `bankReference` — todos acumulados en `refs[]` |
+| Tolerancia de monto ±0.01 (Causa 3) | ✅ Aumentada | `AMOUNT_TOLERANCE = 1.0` (antes 0.01) — cubre redondeos bancarios en Bs |
+| Mejora 5: "posible match" sin auto-verificar | ❌ Pendiente | Si referencia hace match pero monto difiere, todavía cae en `unmatchedBank`. No existe estado "posible match" para revisión manual |
+
+---
+
 ## Diagnóstico de causas del bajo índice de aciertos
 
 ### Causa 1: La IA OCR guarda una referencia incorrecta (más impactante)
@@ -156,23 +172,17 @@ Para pagos en bolívares:
 - La tolerancia ±0.01 es apropiada para USD/EUR pero puede fallar si hay ligeras diferencias de centavos en Bs (ej.: tasa aplicada difiere en el cálculo)
 - Si la compra tiene `totalPaid = 150.00` y el banco muestra `150.05`, **no hay match** aunque sea el mismo pago
 
-### Causa 4: Campo `bankReference` legacy ignorado
+### Causa 4: Campo `bankReference` legacy ignorado ✅ RESUELTO
 
-Compras antiguas pueden tener la referencia solo en `purchase.bankReference` (campo legacy). Esta columna **nunca se consulta** en el proceso de reconciliación. Si `aiAnalysisResult` es null Y `payments[]` está vacío, `extractPurchaseReferences()` devuelve `[]` y la compra es skipeada completamente.
+~~Compras antiguas pueden tener la referencia solo en `purchase.bankReference` (campo legacy). Esta columna nunca se consultaba en el proceso de reconciliación.~~
 
-### Causa 5: Referencia bancaria no extraída por Gemini
+**Implementado**: `extractPurchaseReferences()` ahora incluye `bankReference` como Candidato 3. Si `aiAnalysisResult` es null Y `payments[]` está vacío pero hay `bankReference`, éste se usa.
 
-Si el estado de cuenta tiene la referencia en un formato inusual o embebida solo en la descripción, Gemini puede devolver `reference: ""` para algunas transacciones. En ese caso, la transacción cae directamente a `unmatchedBank`:
+### Causa 5: Referencia bancaria no extraída por Gemini ✅ RESUELTO
 
-```typescript
-const normBankRef = this.normalizeRef(tx.reference);
-if (!normBankRef) {
-  unmatchedBank.push(tx);
-  continue; // ← salta sin intentar nada más
-}
-```
+~~Si el estado de cuenta tiene la referencia embebida solo en la descripción, Gemini puede devolver `reference: ""` y la transacción cae directamente a `unmatchedBank` sin intentar ningún fallback.~~
 
-No hay ningún intento de extraer la referencia desde `tx.description` como fallback.
+**Implementado**: `matchTransactions()` ahora usa `tx.reference || this.extractRefFromDescription(tx.description)`. La función `extractRefFromDescription()` extrae la secuencia numérica más larga (≥7 dígitos) encontrada en la descripción como referencia candidata.
 
 ### Causa 6: Compras con múltiples pagos (split payments)
 
@@ -199,32 +209,31 @@ Para pagos en Bs, el monto que la IA OCR extrae del comprobante (lo que ve en la
 
 ## Propuestas de mejora para pagos en Bs
 
-### Mejora 1: Prioridad de referencia — usar `payments[]` como fallback cuando AI existe
+### Mejora 1: ✅ IMPLEMENTADA — Usar todos los candidatos de referencia (AI + payments[] + bankReference)
 
-En lugar del early return, cuando `aiAnalysisResult` existe pero también hay `payments[]`, agregar las referencias de `payments[]` como candidatos adicionales:
+~~En lugar del early return, agregar todas las referencias como candidatos.~~
 
-```
-ACTUAL:  AI ref → return
-PROPUESTO: AI ref + payments[].reference + bankReference (todos como candidatos)
-```
+**Implementado**: No hay early-return. Se colectan referencias de `aiAnalysisResult.data.reference`, `payments[].reference`, y `bankReference` acumuladas en un array con su monto asociado.
 
-Así si la IA leyó mal, todavía se intenta con la referencia que el usuario ingresó manualmente.
+### Mejora 2: ✅ IMPLEMENTADA — Incluir `bankReference` como candidato
 
-### Mejora 2: Incluir el campo `bankReference` (legacy) como candidato
+~~Agregar `purchase.bankReference` al array de referencias candidatas.~~
 
-Agregar `purchase.bankReference` al array de referencias candidatas si no está vacío, con el `totalPaid` como monto asociado.
+**Implementado**: Ver Mejora 1.
 
-### Mejora 3: Separar matching de referencia y monto para Bs
+### Mejora 3: ✅ IMPLEMENTADA (parcialmente) — Tolerancia aumentada para Bs
 
-Para pagos en Bs, el monto puede tener variaciones mayores a ±0.01 debido a redondeos bancarios. Se podría:
-- Ampliar la tolerancia a ±1.00 Bs para el método de pago de tipo Bs
-- O: hacer primero match solo por referencia (sufijo 7 chars) y luego validar el monto con tolerancia configurable por `paymentMethod`
+~~Para pagos en Bs, el monto puede tener variaciones mayores a ±0.01 debido a redondeos bancarios.~~
 
-### Mejora 4: Fallback de descripción bancaria
+**Implementado parcialmente**: `AMOUNT_TOLERANCE = 1.0` (aumentado de 0.01). No es configurable por `paymentMethod` todavía.
 
-Cuando Gemini no extrae referencia explícita (`tx.reference === ""`), intentar buscar secuencias numéricas de ≥7 dígitos dentro de `tx.description` antes de descartar la transacción.
+### Mejora 4: ✅ IMPLEMENTADA — Fallback de descripción bancaria
 
-### Mejora 5: Match solo por referencia cuando monto es inconsistente
+~~Cuando Gemini no extrae referencia explícita, intentar buscar secuencias numéricas de ≥7 dígitos dentro de `tx.description`.~~
+
+**Implementado**: Ver Causa 5 arriba.
+
+### Mejora 5: ❌ PENDIENTE — Match solo por referencia cuando monto es inconsistente
 
 Para el caso de Bs: si la referencia (sufijo 7) hace match pero el monto difiere, no auto-verificar sino poner en estado `MANUAL_REVIEW` o marcar como "posible match" en el resultado, para que un admin lo revise manualmente. Actualmente un "posible match" simplemente cae en `unmatchedBank`.
 
@@ -251,7 +260,204 @@ Para diagnosticar qué está fallando en un caso concreto:
 | Archivo | Responsabilidad |
 |---------|----------------|
 | `services/reconciliation.service.ts` | Lógica central de matching, normalización y auto-verificación |
+| `services/reconciliation-job.service.ts` | CRUD de jobs, enqueue (fire-and-forget), recovery de jobs colgados |
 | `services/bank-statement-parser.service.ts` | Parseo del archivo bancario via Gemini AI |
+| `listeners/reconciliation-job.listener.ts` | Worker asíncrono: escucha `reconciliation.process` y ejecuta la conciliación en background |
+| `events/reconciliation.events.ts` | Constantes de eventos y tipos del payload |
+| `entities/reconciliation-job.entity.ts` | Entidad `reconciliation_jobs` con status, resultado JSONB y metadatos |
 | `dto/reconciliation.dto.ts` | Tipos `BankTransaction`, `ReconciliationResult` |
+| `dto/reconciliation-job.dto.ts` | DTOs de respuesta: `ReconciliationJobResponseDto`, `ReconciliationJobCreatedDto` |
 | `entities/purchase.entity.ts` | Entidad Purchase con campos `aiAnalysisResult`, `payments[]`, `bankReference` |
-| `purchases.controller.ts` | Endpoint `POST /api/v1/purchases/reconcile` |
+| `purchases.controller.ts` | Endpoints de conciliación asíncrona |
+
+---
+
+## Sistema de Worker Asíncrono (implementado Feb 2026)
+
+### Problema resuelto
+
+El endpoint `POST /reconcile` era síncrono: esperaba a que Gemini AI parseara el CSV/Excel y ejecutara todo el matching antes de responder. Con estados de cuenta grandes (>200 transacciones), esto causaba timeouts HTTP y UX bloqueante.
+
+### Arquitectura implementada
+
+```
+Frontend
+  │
+  │  POST /reconcile (multipart) ──► HTTP 202 + { jobId, statusUrl }
+  │                                        ↓
+  │                               ReconciliationJobService.enqueue()
+  │                                   ├─ Guarda job en DB (status=processing)
+  │                                   └─ eventEmitter.emit('reconciliation.process', payload)
+  │                                              ↓  (fire-and-forget, no await)
+  │                                   ReconciliationJobListener
+  │                                       └─ reconciliationService.reconcile()
+  │                                           ├─ BankStatementParserService (Gemini AI)
+  │                                           ├─ matchTransactions()
+  │                                           └─ markComplete() / markFailed()
+  │
+  │  GET /reconcile/jobs/:jobId ──► { status: 'processing' | 'ready' | 'failed', result }
+  │  (polling cada 3s hasta status !== 'processing')
+```
+
+**Patrón usado**: EventEmitter2 fire-and-forget — el mismo patrón que `PurchasesMailListener` y `purchase.created`. `emit()` dispara el handler `@OnEvent` pero **no awaita** la Promise retornada, por lo que el proceso corre en background mientras el HTTP response ya fue enviado.
+
+### Recovery de jobs colgados
+
+`ReconciliationJobService` implementa `OnModuleInit`: al iniciar la app, cualquier job con `status=processing` y `startedAt` hace más de 15 minutos se marca automáticamente como `failed`. Esto cubre reinicios de proceso durante un job activo.
+
+### Nuevos archivos creados
+
+| Archivo | Descripción |
+|---------|-------------|
+| `events/reconciliation.events.ts` | `RECONCILIATION_EVENTS` objeto con constantes de nombre de evento; `ReconciliationProcessEvent` interface |
+| `entities/reconciliation-job.entity.ts` | Tabla `reconciliation_jobs`: `uid`, `raffle_id`, `payment_method_id`, `file_name`, `file_mime_type`, `status` (enum), `result` (JSONB), `error_message`, `created_by`, `started_at`, `completed_at` |
+| `migrations/1770900000000-CreateReconciliationJobTable.ts` | Migración SQL para crear la tabla y el enum PostgreSQL |
+| `dto/reconciliation-job.dto.ts` | `ReconciliationJobResponseDto` y `ReconciliationJobCreatedDto` |
+| `services/reconciliation-job.service.ts` | `enqueue()`, `markComplete()`, `markFailed()`, `findOne()`, `findAll()`, recovery `OnModuleInit` |
+| `listeners/reconciliation-job.listener.ts` | `@OnEvent('reconciliation.process')` handler que ejecuta `reconciliationService.reconcile()` |
+
+---
+
+## Referencia de API para el Frontend
+
+> Base path: `/api/v1/purchases`
+> Todos los endpoints requieren `Authorization: Bearer <jwt>`.
+
+---
+
+### `POST /reconcile` — Iniciar conciliación asíncrona
+
+Sube el estado de cuenta bancario. Responde inmediatamente con un `jobId`; el procesamiento ocurre en background.
+
+**Request**: `multipart/form-data`
+
+| Campo | Tipo | Requerido | Descripción |
+|-------|------|-----------|-------------|
+| `file` | `File` | ✅ | Archivo CSV o Excel del estado de cuenta bancario |
+| `paymentMethodId` | `string` (UUID) | ✅ | UID del método de pago a conciliar |
+| `raffleId` | `string` (UUID) | ✅ | UID de la rifa para filtrar compras |
+
+**Response 202 Accepted**:
+```json
+{
+  "jobId": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "processing",
+  "statusUrl": "/api/v1/purchases/reconcile/jobs/550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Errores**:
+- `400` — archivo, `paymentMethodId` o `raffleId` faltante
+- `401` — token inválido o expirado
+- `403` — rol sin permisos
+
+---
+
+### `GET /reconcile/jobs/:jobId` — Consultar estado de un job
+
+Endpoint de polling. El frontend debe llamarlo cada ~3 segundos hasta que `status !== 'processing'`.
+
+**Params**: `jobId` — UUID devuelto por `POST /reconcile`
+
+**Response 200**:
+```json
+{
+  "uid": "550e8400-e29b-41d4-a716-446655440000",
+  "raffleId": "rifa-uid-123",
+  "paymentMethodId": "pago-uid-456",
+  "fileName": "estado_cuenta_enero.csv",
+  "status": "processing",
+  "result": null,
+  "errorMessage": null,
+  "createdAt": "2026-02-28T14:30:00.000Z",
+  "completedAt": null
+}
+```
+
+**Valores de `status`**:
+
+| Valor | Significado | Qué hacer |
+|-------|-------------|-----------|
+| `processing` | Job en cola o ejecutándose | Seguir haciendo polling |
+| `ready` | Conciliación completada con éxito | Leer `result` y mostrar resultados |
+| `failed` | Error durante el procesamiento | Leer `errorMessage` y mostrar al usuario |
+
+**Estructura de `result`** (cuando `status === 'ready'`):
+```json
+{
+  "matched": [
+    {
+      "purchase": { "uid": "...", "customer": { "name": "..." }, "totalAmount": 150.00 },
+      "bankTransaction": { "date": "2026-01-15", "amount": 150.00, "reference": "000123456789", "description": "PAGO REF 123456789" }
+    }
+  ],
+  "unmatchedBank": [
+    { "date": "2026-01-16", "amount": 75.50, "reference": "000987654321", "description": "..." }
+  ],
+  "unmatchedPurchases": [
+    { "uid": "...", "customer": { "name": "..." }, "totalAmount": 200.00, "status": "pending" }
+  ]
+}
+```
+
+**Errores**:
+- `404` — `jobId` no existe
+- `401` — token inválido
+
+---
+
+### `GET /reconcile/jobs` — Historial de jobs
+
+Lista los jobs de conciliación más recientes (útil para mostrar un historial en UI).
+
+**Query params** (todos opcionales):
+
+| Parámetro | Tipo | Descripción |
+|-----------|------|-------------|
+| `raffleId` | `string` | Filtrar por rifa |
+| `paymentMethodId` | `string` | Filtrar por método de pago |
+| `limit` | `number` | Máximo de resultados (default: `20`) |
+
+**Response 200**: Array de objetos con la misma estructura que `GET /reconcile/jobs/:jobId`.
+
+---
+
+### Ejemplo de flujo completo (JavaScript/TypeScript)
+
+```typescript
+// 1. Subir el estado de cuenta
+const formData = new FormData();
+formData.append('file', csvFile);
+formData.append('raffleId', selectedRaffleId);
+formData.append('paymentMethodId', selectedPaymentMethodId);
+
+const { jobId, statusUrl } = await fetch('/api/v1/purchases/reconcile', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${token}` },
+  body: formData,
+}).then(res => res.json());
+
+// 2. Polling hasta que el job termine
+const poll = async (): Promise<ReconciliationJob> => {
+  const job = await fetch(`/api/v1${statusUrl}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  }).then(res => res.json());
+
+  if (job.status === 'processing') {
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    return poll();
+  }
+  return job;
+};
+
+const completedJob = await poll();
+
+// 3. Manejar resultado
+if (completedJob.status === 'ready') {
+  const { matched, unmatchedBank, unmatchedPurchases } = completedJob.result;
+  // mostrar resultados...
+} else {
+  // completedJob.status === 'failed'
+  console.error(completedJob.errorMessage);
+}
+```

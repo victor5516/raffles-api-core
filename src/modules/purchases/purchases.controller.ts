@@ -16,6 +16,8 @@ import {
   ForbiddenException,
   Res,
   BadRequestException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -50,8 +52,12 @@ import { ConfigService } from '@nestjs/config';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
 import { RaffleOrdersSummaryResponseDto } from './dto/purchases-summary.dto';
 import { PurchasesCron } from './purchases.cron';
-import { ReconciliationService } from './services/reconciliation.service';
-import { ReconciliationResult } from './dto/reconciliation.dto';
+import { ReconciliationJobService } from './services/reconciliation-job.service';
+import { ReconciliationJob } from './entities/reconciliation-job.entity';
+import {
+  ReconciliationJobCreatedDto,
+  ReconciliationJobResponseDto,
+} from './dto/reconciliation-job.dto';
 
 @ApiTags('Purchases')
 @Controller('purchases')
@@ -61,7 +67,7 @@ export class PurchasesController {
     private readonly purchasesCron: PurchasesCron,
     private readonly configService: ConfigService,
     private readonly eventEmitter: EventEmitter2,
-    private readonly reconciliationService: ReconciliationService,
+    private readonly reconciliationJobService: ReconciliationJobService,
   ) {}
 
   @Post()
@@ -602,6 +608,51 @@ export class PurchasesController {
     return this.purchasesService.processAuditWebhook(webhook, file);
   }
 
+  @Get('reconcile/jobs')
+  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @ApiOperation({ summary: 'Listar historial de jobs de conciliación' })
+  @ApiBearerAuth('JWT-auth')
+  @ApiQuery({ name: 'raffleId', required: false, type: String })
+  @ApiQuery({ name: 'paymentMethodId', required: false, type: String })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista de jobs ordenados por más reciente',
+    type: [ReconciliationJobResponseDto],
+  })
+  listReconciliationJobs(
+    @Query('raffleId') raffleId?: string,
+    @Query('paymentMethodId') paymentMethodId?: string,
+    @Query('limit') limit?: number,
+  ): Promise<ReconciliationJob[]> {
+    return this.reconciliationJobService.findAll({
+      raffleId,
+      paymentMethodId,
+      limit,
+    });
+  }
+
+  @Get('reconcile/jobs/:jobId')
+  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @ApiOperation({
+    summary: 'Consultar estado de un job de conciliación',
+    description:
+      'processing = en curso | ready = resultado disponible | failed = ver errorMessage',
+  })
+  @ApiBearerAuth('JWT-auth')
+  @ApiParam({ name: 'jobId', description: 'UID del job de conciliación' })
+  @ApiResponse({
+    status: 200,
+    description: 'Estado y resultado del job',
+    type: ReconciliationJobResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Job no encontrado' })
+  getReconciliationJob(
+    @Param('jobId') jobId: string,
+  ): Promise<ReconciliationJobResponseDto> {
+    return this.reconciliationJobService.getJobDetail(jobId);
+  }
+
   @Post('reconcile')
   @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
   @UseInterceptors(
@@ -609,16 +660,20 @@ export class PurchasesController {
       storage: memoryStorage(),
     }),
   )
+  @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
-    summary: 'Conciliación bancaria automática',
+    summary: 'Iniciar conciliación bancaria asíncrona',
     description:
-      'Sube un estado de cuenta bancario (Excel/CSV/PDF/imagen), extrae las transacciones de crédito con IA y las cruza contra las compras de un método de pago.',
+      'Encola el archivo para procesamiento en background. ' +
+      'Retorna jobId inmediatamente (HTTP 202). ' +
+      'Consultar GET /reconcile/jobs/:jobId para el resultado.',
   })
   @ApiBearerAuth('JWT-auth')
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
       type: 'object',
+      required: ['file', 'paymentMethodId', 'raffleId'],
       properties: {
         file: {
           type: 'string',
@@ -633,18 +688,19 @@ export class PurchasesController {
           description: 'UID de la rifa para filtrar compras',
         },
       },
-      required: ['file', 'paymentMethodId', 'raffleId'],
     },
   })
   @ApiResponse({
-    status: 200,
-    description: 'Resultado de la conciliación bancaria',
+    status: 202,
+    description: 'Job de conciliación iniciado. Consultar statusUrl para el resultado.',
+    type: ReconciliationJobCreatedDto,
   })
-  async reconcile(
+  async reconcileAsync(
     @UploadedFile() file: Express.Multer.File,
     @Body('paymentMethodId') paymentMethodId: string,
     @Body('raffleId') raffleId: string,
-  ): Promise<ReconciliationResult> {
+    @ActiveUser() admin: Admin,
+  ): Promise<ReconciliationJobCreatedDto> {
     if (!file) {
       throw new BadRequestException('Archivo de estado de cuenta requerido');
     }
@@ -655,12 +711,20 @@ export class PurchasesController {
       throw new BadRequestException('raffleId es requerido');
     }
 
-    return this.reconciliationService.reconcile(
-      file.buffer,
-      file.mimetype,
+    const job = await this.reconciliationJobService.enqueue({
+      fileBuffer: file.buffer,
+      fileMimeType: file.mimetype,
+      fileName: file.originalname ?? null,
       paymentMethodId,
       raffleId,
-    );
+      createdBy: admin?.uid ?? null,
+    });
+
+    return {
+      jobId: job.uid,
+      status: job.status,
+      statusUrl: `/api/v1/purchases/reconcile/jobs/${job.uid}`,
+    };
   }
 
   @Sse('sse/stream')

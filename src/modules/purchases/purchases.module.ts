@@ -15,6 +15,9 @@ import { GoogleSheetsService } from '../../common/services/google-sheets.service
 import { TicketAllocationService } from './services/ticket-allocation.service';
 import { BankStatementParserService } from './services/bank-statement-parser.service';
 import { ReconciliationService } from './services/reconciliation.service';
+import { ReconciliationJobService } from './services/reconciliation-job.service';
+import { ReconciliationJob } from './entities/reconciliation-job.entity';
+import { ReconciliationJobListener } from './listeners/reconciliation-job.listener';
 import { MailModule } from '../mail/mail.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { PurchasesMailListener } from './listeners/purchases-mail.listener';
@@ -28,6 +31,7 @@ import { PurchasesMailListener } from './listeners/purchases-mail.listener';
       Raffle,
       PaymentMethod,
       Currency,
+      ReconciliationJob,
     ]),
     MailModule,
     CouponsModule,
@@ -42,7 +46,9 @@ import { PurchasesMailListener } from './listeners/purchases-mail.listener';
     TicketAllocationService,
     BankStatementParserService,
     ReconciliationService,
+    ReconciliationJobService,
     PurchasesMailListener,
+    ReconciliationJobListener,
   ],
   exports: [PurchasesService, PurchasesExportService],
 })
