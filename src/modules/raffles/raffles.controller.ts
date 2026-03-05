@@ -29,8 +29,9 @@ import {
 } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Request } from 'express';
-import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
+import { Auth } from '../auth/decorators/admin-auth.decorator';
 import { Admin } from '../auth/entities/admin.entity';
+import { AdminRole } from '../auth/enums/admin-role.enum';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
 
 type AuthenticatedRequest = Request & { user: Admin };
@@ -41,7 +42,11 @@ export class RafflesController {
   constructor(private readonly rafflesService: RafflesService) {}
 
   @Post()
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @UseInterceptors(
     FileFieldsInterceptor(
       [
@@ -104,7 +109,11 @@ export class RafflesController {
   }
 
   @Put(':uid')
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @UseInterceptors(
     FileFieldsInterceptor(
       [
@@ -151,7 +160,11 @@ export class RafflesController {
   }
 
   @Delete(':uid')
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @ApiOperation({ summary: 'Eliminar una rifa' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({

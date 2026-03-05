@@ -2,4 +2,5 @@ export enum AdminRole {
   SUPER_ADMIN = 'super_admin',
   VERIFIER = 'verifier',
   VERIFIER_EXPORT = 'verifier_export',
+  AUDITOR = 'auditor',
 }

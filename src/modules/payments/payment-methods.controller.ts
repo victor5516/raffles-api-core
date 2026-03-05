@@ -23,7 +23,8 @@ import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
+import { Auth } from '../auth/decorators/admin-auth.decorator';
+import { AdminRole } from '../auth/enums/admin-role.enum';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
 
 @ApiTags('Payment Methods')
@@ -32,7 +33,11 @@ export class PaymentMethodsController {
   constructor(private readonly paymentMethodsService: PaymentMethodsService) {}
 
   @Post()
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @UseInterceptors(
     FileInterceptor('image', {
       storage: memoryStorage(),
@@ -93,7 +98,11 @@ export class PaymentMethodsController {
   }
 
   @Put(':uid')
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @UseInterceptors(
     FileInterceptor('image', {
       storage: memoryStorage(),
@@ -134,7 +143,11 @@ export class PaymentMethodsController {
   }
 
   @Delete(':uid')
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @ApiOperation({ summary: 'Eliminar un método de pago' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({

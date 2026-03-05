@@ -133,7 +133,13 @@ export class CustomersController {
   }
 
   @Patch(':uid')
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @ApiOperation({ summary: 'Actualizar información de un cliente' })
+  @ApiBearerAuth('JWT-auth')
   @ApiParam({
     name: 'uid',
     description: 'UID del cliente a actualizar',
@@ -145,6 +151,8 @@ export class CustomersController {
     description: 'Cliente actualizado exitosamente',
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiResponse({ status: 409, description: 'El email ya está en uso' })
   update(@Param('uid') uid: string, @Body() updateDto: UpdateCustomerDto) {

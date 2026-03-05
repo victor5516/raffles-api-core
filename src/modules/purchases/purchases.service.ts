@@ -43,6 +43,7 @@ import { S3Service } from '../../common/s3/s3.service';
 import { SqsService } from '../../common/sqs/sqs.service';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
 import { AuditWebhookDto } from './dto/audit-webhook.dto';
+import { Admin } from '../auth/entities/admin.entity';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 import { calculatePromotionalTotal } from '../raffles/utils/pricing.util';
 import {
@@ -832,7 +833,7 @@ export class PurchasesService {
     };
   }
 
-  async findAll(query: Record<string, unknown>) {
+  async findAll(query: Record<string, unknown>, admin?: Admin) {
     const raffleId =
       typeof query.raffleId === 'string' ? query.raffleId : undefined;
     const status = typeof query.status === 'string' ? query.status : undefined;
@@ -962,6 +963,12 @@ export class PurchasesService {
       qb.andWhere('purchase.submittedAt <= :dateTo', { dateTo: dateToEnd });
     }
 
+    if (admin?.role === AdminRole.AUDITOR) {
+      qb.andWhere('purchase.status NOT IN (:...excludedStatuses)', {
+        excludedStatuses: [PurchaseStatus.REJECTED, PurchaseStatus.DUPLICATED],
+      });
+    }
+
     const [items, total] = await qb.getManyAndCount();
 
     const signedItems = items.map((purchase) => {
@@ -981,8 +988,13 @@ export class PurchasesService {
       }));
 
       const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
+      const customer =
+        admin?.role === AdminRole.AUDITOR && purchase.customer
+          ? this.maskCustomerForAuditor(purchase.customer)
+          : purchase.customer;
       return {
         ...purchase,
+        customer,
         paymentScreenshotUrl:
           paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
         payments: paymentsWithCdn,
@@ -1019,7 +1031,7 @@ export class PurchasesService {
     };
   }
 
-  async findOne(uid: string) {
+  async findOne(uid: string, admin?: Admin) {
     const purchase = await this.purchaseRepository.findOne({
       where: { uid },
       relations: [
@@ -1030,6 +1042,15 @@ export class PurchasesService {
       ],
     });
     if (!purchase) throw new NotFoundException('Purchase not found');
+
+    if (admin?.role === AdminRole.AUDITOR) {
+      if (
+        purchase.status === PurchaseStatus.REJECTED ||
+        purchase.status === PurchaseStatus.DUPLICATED
+      ) {
+        throw new NotFoundException('Purchase not found');
+      }
+    }
 
     const paymentScreenshotUrl = this.s3Service.getCdnUrl(
       purchase.paymentScreenshotUrl,
@@ -1047,8 +1068,13 @@ export class PurchasesService {
     const redeemedCoupons = await this.couponsService.findByPurchaseId(uid);
 
     const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
+    const customer =
+      admin?.role === AdminRole.AUDITOR && purchase.customer
+        ? this.maskCustomerForAuditor(purchase.customer)
+        : purchase.customer;
     return {
       ...purchase,
+      customer,
       ticketNumbers: purchase.ticketNumbers || [],
       paymentScreenshotUrl:
         paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
@@ -1068,6 +1094,20 @@ export class PurchasesService {
           }
         : purchase.paymentMethod,
       aiAnalysisResult: purchase?.aiAnalysisResult?.data ?? null,
+    };
+  }
+
+  /**
+   * For AUDITOR role: returns only non-sensitive customer fields (nationalId, uid).
+   * fullName, email, phone are omitted.
+   */
+  private maskCustomerForAuditor(
+    customer: Customer | null,
+  ): { uid: string; nationalId: string } | null {
+    if (!customer) return null;
+    return {
+      uid: customer.uid,
+      nationalId: customer.nationalId,
     };
   }
 

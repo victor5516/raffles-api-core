@@ -17,7 +17,8 @@ import {
 import { CurrenciesService } from './currencies.service';
 import { CreateCurrencyDto } from './dto/create-currency.dto';
 import { UpdateCurrencyDto } from './dto/update-currency.dto';
-import { AdminAuth } from '../auth/decorators/admin-auth.decorator';
+import { Auth } from '../auth/decorators/admin-auth.decorator';
+import { AdminRole } from '../auth/enums/admin-role.enum';
 
 @ApiTags('Currencies')
 @Controller('currencies')
@@ -25,7 +26,11 @@ export class CurrenciesController {
   constructor(private readonly currenciesService: CurrenciesService) {}
 
   @Post()
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @ApiOperation({ summary: 'Crear una nueva divisa' })
   @ApiBearerAuth('JWT-auth')
   @ApiResponse({
@@ -66,7 +71,11 @@ export class CurrenciesController {
   }
 
   @Patch(':uid')
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @ApiOperation({ summary: 'Actualizar una divisa existente' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
@@ -87,7 +96,11 @@ export class CurrenciesController {
   }
 
   @Delete(':uid')
-  @AdminAuth()
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+  ])
   @ApiOperation({ summary: 'Eliminar una divisa' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({

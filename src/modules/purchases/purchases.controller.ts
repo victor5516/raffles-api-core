@@ -115,7 +115,12 @@ export class PurchasesController {
   }
 
   @Get()
-  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @Auth([
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.SUPER_ADMIN,
+    AdminRole.AUDITOR,
+  ])
   @ApiOperation({ summary: 'Obtener todas las compras con filtros opcionales' })
   @ApiBearerAuth('JWT-auth')
   @ApiQuery({
@@ -202,8 +207,11 @@ export class PurchasesController {
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  findAll(@Query() query: Record<string, unknown>) {
-    return this.purchasesService.findAll(query);
+  findAll(
+    @Query() query: Record<string, unknown>,
+    @ActiveUser() admin: Admin,
+  ) {
+    return this.purchasesService.findAll(query, admin);
   }
 
   @Post('upload-evidence')
@@ -316,7 +324,14 @@ export class PurchasesController {
   }
 
   @Get(':uid')
+  @Auth([
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.SUPER_ADMIN,
+    AdminRole.AUDITOR,
+  ])
   @ApiOperation({ summary: 'Obtener una compra por su UID' })
+  @ApiBearerAuth('JWT-auth')
   @ApiParam({
     name: 'uid',
     description: 'UID de la compra',
@@ -328,8 +343,8 @@ export class PurchasesController {
     description: 'Compra encontrada',
   })
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
-  findOne(@Param('uid') uid: string) {
-    return this.purchasesService.findOne(uid);
+  findOne(@Param('uid') uid: string, @ActiveUser() admin: Admin) {
+    return this.purchasesService.findOne(uid, admin);
   }
 
   @Patch(':uid')
