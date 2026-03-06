@@ -21,8 +21,16 @@ export type NxmPromotionConfig =
   | { groups: NxmRule[] }
   | NxmConfig;
 
-/** Percentage config: discount 0-100. */
-export type PercentagePromotionConfig = { percentage: number };
+/** Single percentage rule: discount 0-100, optional min tickets. */
+export interface PercentageRule {
+  percentage: number;
+  minTickets?: number;
+}
+
+/** Percentage config: single rule (legacy) or multiple rules. */
+export type PercentagePromotionConfig =
+  | { percentage?: number; minTickets?: number; rules?: PercentageRule[] }
+  | { percentage: number };
 
 export type PromotionConfig = NxmPromotionConfig | PercentagePromotionConfig;
 
@@ -72,6 +80,31 @@ function getNxmRules(config: Record<string, unknown>): NxmRule[] {
   return [];
 }
 
+interface NormalizedPercentageRule {
+  percentage: number;
+  minTickets: number;
+}
+
+function getPercentageRules(config: Record<string, unknown>): NormalizedPercentageRule[] {
+  if (config.rules && Array.isArray(config.rules)) {
+    const rules = (config.rules as Array<{ percentage?: unknown; discount?: unknown; minTickets?: unknown }>)
+      .map((r) => {
+        const pct = Number(r?.percentage ?? r?.discount);
+        const min = typeof r?.minTickets === 'number' ? r.minTickets : 0;
+        if (!Number.isFinite(pct) || pct < 0 || pct > 100 || min < 0) return null;
+        return { percentage: pct, minTickets: min };
+      })
+      .filter((r): r is NormalizedPercentageRule => r != null);
+    if (rules.length > 0) return rules;
+  }
+  const percentage = Number(config.percentage ?? config.discount);
+  const minTickets = typeof config.minTickets === 'number' ? config.minTickets : 0;
+  if (Number.isFinite(percentage) && percentage >= 0 && percentage <= 100 && minTickets >= 0) {
+    return [{ percentage, minTickets }];
+  }
+  return [];
+}
+
 /**
  * Calculates the total amount to pay for a given quantity applying optional promotion.
  * Pure function: no side effects.
@@ -116,16 +149,16 @@ export function calculatePromotionalTotal(
   }
 
   if (strategy === PromotionStrategy.PERCENTAGE) {
-    const percentage = Number(cfg.percentage ?? cfg.discount);
-    const minTickets =
-      typeof cfg.minTickets === 'number' ? cfg.minTickets : undefined;
-    if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) {
+    const rules = getPercentageRules(cfg);
+    if (rules.length === 0) {
       return roundMoney(basePrice * quantity);
     }
-    if (minTickets != null && quantity < minTickets) {
+    const sorted = [...rules].sort((a, b) => b.minTickets - a.minTickets);
+    const applied = sorted.find((r) => quantity >= r.minTickets);
+    if (!applied) {
       return roundMoney(basePrice * quantity);
     }
-    const total = quantity * basePrice * (1 - percentage / 100);
+    const total = quantity * basePrice * (1 - applied.percentage / 100);
     return roundMoney(total);
   }
 
