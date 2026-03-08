@@ -276,7 +276,7 @@ export class PurchasesController {
   }
 
   @Post('export/receipts-pdf')
-  @Auth([AdminRole.SUPER_ADMIN])
+  @Auth([AdminRole.SUPER_ADMIN, AdminRole.VERIFIER_EXPORT])
   @ApiOperation({ summary: 'Exportar comprobantes (imágenes) a PDF' })
   @ApiBearerAuth('JWT-auth')
   @ApiProduces('application/pdf')
