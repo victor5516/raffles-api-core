@@ -1,16 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Delete,
-  UseInterceptors,
-  UploadedFile,
-  UploadedFiles,
-  Req,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Delete, UseInterceptors, UploadedFiles } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -28,13 +16,11 @@ import {
   FileInterceptor,
 } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { Request } from 'express';
 import { Auth } from '../auth/decorators/admin-auth.decorator';
+import { ActiveUser } from '../auth/decorators/active-user.decorator';
 import { Admin } from '../auth/entities/admin.entity';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
-
-type AuthenticatedRequest = Request & { user: Admin };
 
 @ApiTags('Raffles')
 @Controller('raffles')
@@ -146,7 +132,7 @@ export class RafflesController {
     @Body() updateRaffleDto: UpdateRaffleDto,
     @UploadedFiles()
     files: { image?: Express.Multer.File[]; gallery?: Express.Multer.File[] },
-    @Req() req: AuthenticatedRequest,
+    @ActiveUser() admin: Admin,
   ) {
     const imageFile = files?.image?.[0];
     const galleryFiles = files?.gallery ?? [];
@@ -154,7 +140,7 @@ export class RafflesController {
       uid,
       updateRaffleDto,
       imageFile,
-      req.user?.uid,
+      admin?.uid,
       galleryFiles,
     );
   }
@@ -179,7 +165,7 @@ export class RafflesController {
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 404, description: 'Rifa no encontrada' })
-  remove(@Param('uid') uid: string) {
-    return this.rafflesService.remove(uid);
+  remove(@Param('uid') uid: string, @ActiveUser() admin: Admin) {
+    return this.rafflesService.remove(uid, admin.uid);
   }
 }

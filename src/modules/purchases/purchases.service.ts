@@ -56,6 +56,7 @@ import { PurchaseVerificationService } from './services/purchase-verification.se
 import { TicketAllocationService } from './services/ticket-allocation.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { Coupon } from '../coupons/entities/coupon.entity';
+import { AuditEventPayload } from '../audit-logs/dto/audit-event.payload';
 
 @Injectable()
 export class PurchasesService {
@@ -431,8 +432,9 @@ export class PurchasesService {
     adminId: string,
   ) {
     const { status } = updateDto;
+    const oldData = await this.findOne(uid);
 
-    return this.dataSource.transaction(async (manager) => {
+    await this.dataSource.transaction(async (manager) => {
       const purchase = await manager.findOne(Purchase, { where: { uid } });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
@@ -492,9 +494,18 @@ export class PurchasesService {
         purchaseId: purchase.uid,
         status,
       });
-
-      return purchase;
     });
+
+    const newData = await this.findOne(uid);
+    this.eventEmitter.emit('audit.log', {
+      adminId,
+      action: 'UPDATE',
+      entityName: 'Purchase',
+      entityId: uid,
+      previousData: oldData,
+      newData,
+    } satisfies AuditEventPayload);
+    return newData;
   }
 
   /**
@@ -502,6 +513,7 @@ export class PurchasesService {
    * Sets auditReviewedAt and optionally verifiedByAdmin if not already set.
    */
   async markAsAudited(uid: string, adminId: string) {
+    const oldData = await this.findOne(uid);
     const purchase = await this.purchaseRepository.findOne({ where: { uid } });
     if (!purchase) throw new NotFoundException('Purchase not found');
 
@@ -511,7 +523,16 @@ export class PurchasesService {
       purchase.verifiedByAdmin = { uid: adminId } as any;
     }
     await this.purchaseRepository.save(purchase);
-    return this.findOne(uid);
+    const newData = await this.findOne(uid);
+    this.eventEmitter.emit('audit.log', {
+      adminId,
+      action: 'UPDATE',
+      entityName: 'Purchase',
+      entityId: uid,
+      previousData: oldData,
+      newData,
+    } satisfies AuditEventPayload);
+    return newData;
   }
 
   /**
@@ -533,6 +554,7 @@ export class PurchasesService {
       ? { notes: updateDto.notes }
       : updateDto;
     const effectiveFile = isVerifierLike ? undefined : file;
+    const oldData = await this.findOne(uid);
 
     await this.dataSource.transaction(async (manager) => {
       const purchase = await manager.findOne(Purchase, {
@@ -710,7 +732,16 @@ export class PurchasesService {
       await manager.save(Purchase, purchase);
     });
 
-    return this.findOne(uid);
+    const newData = await this.findOne(uid);
+    this.eventEmitter.emit('audit.log', {
+      adminId: adminId ?? null,
+      action: 'UPDATE',
+      entityName: 'Purchase',
+      entityId: uid,
+      previousData: oldData,
+      newData,
+    } satisfies AuditEventPayload);
+    return newData;
   }
 
   async getRaffleOrdersSummary(
@@ -1111,10 +1142,19 @@ export class PurchasesService {
     };
   }
 
-  async remove(uid: string) {
+  async remove(uid: string, adminId: string) {
+    const oldData = await this.findOne(uid);
     const result = await this.purchaseRepository.delete(uid);
     if (result.affected === 0)
       throw new NotFoundException('Purchase not found');
+    this.eventEmitter.emit('audit.log', {
+      adminId,
+      action: 'DELETE',
+      entityName: 'Purchase',
+      entityId: uid,
+      previousData: oldData,
+      newData: null,
+    } satisfies AuditEventPayload);
   }
 
   /**

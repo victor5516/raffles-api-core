@@ -94,15 +94,18 @@ export class PurchasesCron {
     await this.runExport(false);
   }
 
-  async rebuildPurchasesSheets(): Promise<{
+  async rebuildPurchasesSheets(raffleId?: string): Promise<{
     purchases: number;
     rows: number;
     sheets: number;
   }> {
-    return this.runExport(true);
+    return this.runExport(true, raffleId);
   }
 
-  private async runExport(fullRebuild: boolean): Promise<{
+  private async runExport(
+    fullRebuild: boolean,
+    raffleId?: string,
+  ): Promise<{
     purchases: number;
     rows: number;
     sheets: number;
@@ -117,8 +120,18 @@ export class PurchasesCron {
     const sheetNamesCache = new Map<string, string[]>();
     this.googleSheetsService.setSheetNamesCache(sheetNamesCache);
     try {
+      const where: any = fullRebuild
+        ? {}
+        : {
+            exportedToSheets: false,
+          };
+
+      if (raffleId) {
+        where.raffle = { uid: raffleId };
+      }
+
       const purchases = await this.purchaseRepository.find({
-        where: fullRebuild ? {} : { exportedToSheets: false },
+        where,
         relations: ['customer', 'paymentMethod', 'raffle'],
         order: { submittedAt: 'ASC' },
       });

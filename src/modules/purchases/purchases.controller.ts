@@ -511,8 +511,8 @@ export class PurchasesController {
     description: 'Solo Super Admin puede eliminar compras',
   })
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
-  remove(@Param('uid') uid: string) {
-    return this.purchasesService.remove(uid);
+  remove(@Param('uid') uid: string, @ActiveUser() admin: Admin) {
+    return this.purchasesService.remove(uid, admin.uid);
   }
 
   @Get('summary/by-raffle')

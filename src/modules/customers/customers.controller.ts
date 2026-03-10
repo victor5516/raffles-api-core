@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Patch,
-  Param,
-  Query,
-  Body,
-  Res,
-} from '@nestjs/common';
+import { Controller, Get, Patch, Param, Query, Body, Res } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -21,6 +13,8 @@ import { CustomersService } from './customers.service';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ToggleBlacklistDto } from './dto/toggle-blacklist.dto';
 import { Auth } from '../auth/decorators/admin-auth.decorator';
+import { ActiveUser } from '../auth/decorators/active-user.decorator';
+import { Admin } from '../auth/entities/admin.entity';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 
 @ApiTags('Customers')
@@ -155,8 +149,12 @@ export class CustomersController {
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
   @ApiResponse({ status: 409, description: 'El email ya está en uso' })
-  update(@Param('uid') uid: string, @Body() updateDto: UpdateCustomerDto) {
-    return this.customersService.update(uid, updateDto);
+  update(
+    @Param('uid') uid: string,
+    @Body() updateDto: UpdateCustomerDto,
+    @ActiveUser() admin: Admin,
+  ) {
+    return this.customersService.update(uid, updateDto, admin.uid);
   }
 
   @Patch(':uid/blacklist')
@@ -180,7 +178,11 @@ export class CustomersController {
     description: 'Solo Super Admin puede gestionar la blacklist',
   })
   @ApiResponse({ status: 404, description: 'Cliente no encontrado' })
-  toggleBlacklist(@Param('uid') uid: string, @Body() dto: ToggleBlacklistDto) {
-    return this.customersService.toggleBlacklist(uid, dto);
+  toggleBlacklist(
+    @Param('uid') uid: string,
+    @Body() dto: ToggleBlacklistDto,
+    @ActiveUser() admin: Admin,
+  ) {
+    return this.customersService.toggleBlacklist(uid, dto, admin.uid);
   }
 }

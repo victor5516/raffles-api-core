@@ -1,14 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Body,
-  Param,
-  Delete,
-  UseInterceptors,
-  UploadedFile,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Delete, UseInterceptors, UploadedFile } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -24,6 +14,8 @@ import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { Auth } from '../auth/decorators/admin-auth.decorator';
+import { ActiveUser } from '../auth/decorators/active-user.decorator';
+import { Admin } from '../auth/entities/admin.entity';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 import { ApiFile } from '../../common/decorators/api-file.decorator';
 
@@ -57,6 +49,7 @@ export class PaymentMethodsController {
   create(
     @Body() createDto: CreatePaymentMethodDto,
     @UploadedFile() file: Express.Multer.File,
+    @ActiveUser() admin: Admin,
   ) {
     // Handle JSON parsing for multipart form data
     if (createDto.payment_data && typeof createDto.payment_data === 'string') {
@@ -67,7 +60,7 @@ export class PaymentMethodsController {
         // ignore
       }
     }
-    return this.paymentMethodsService.createWithImage(createDto, file);
+    return this.paymentMethodsService.createWithImage(createDto, file, admin.uid);
   }
 
   @Get()
@@ -130,6 +123,7 @@ export class PaymentMethodsController {
     @Param('uid') uid: string,
     @Body() updateDto: UpdatePaymentMethodDto,
     @UploadedFile() file: Express.Multer.File,
+    @ActiveUser() admin: Admin,
   ) {
     if (updateDto.payment_data && typeof updateDto.payment_data === 'string') {
       try {
@@ -139,7 +133,7 @@ export class PaymentMethodsController {
         // ignore
       }
     }
-    return this.paymentMethodsService.updateWithImage(uid, updateDto, file);
+    return this.paymentMethodsService.updateWithImage(uid, updateDto, file, admin.uid);
   }
 
   @Delete(':uid')
@@ -162,7 +156,7 @@ export class PaymentMethodsController {
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 404, description: 'Método de pago no encontrado' })
-  remove(@Param('uid') uid: string) {
-    return this.paymentMethodsService.remove(uid);
+  remove(@Param('uid') uid: string, @ActiveUser() admin: Admin) {
+    return this.paymentMethodsService.remove(uid, admin.uid);
   }
 }

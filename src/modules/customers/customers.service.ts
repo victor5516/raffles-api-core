@@ -1,11 +1,8 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import * as ExcelJS from 'exceljs';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Customer } from './entities/customer.entity';
 import { Purchase } from '../purchases/entities/purchase.entity';
 import { Ticket } from '../tickets/entities/ticket.entity';
@@ -13,6 +10,7 @@ import { Raffle } from '../raffles/entities/raffle.entity';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ToggleBlacklistDto } from './dto/toggle-blacklist.dto';
 import { S3Service } from '../../common/s3/s3.service';
+import { AuditEventPayload } from '../audit-logs/dto/audit-event.payload';
 
 @Injectable()
 export class CustomersService {
@@ -24,6 +22,7 @@ export class CustomersService {
     @InjectRepository(Ticket)
     private ticketRepository: Repository<Ticket>,
     private s3Service: S3Service,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   private buildCustomersQuery(query: Record<string, unknown>) {
@@ -298,14 +297,16 @@ export class CustomersService {
     };
   }
 
-  async update(uid: string, updateDto: UpdateCustomerDto) {
+  async update(
+    uid: string,
+    updateDto: UpdateCustomerDto,
+    adminId: string,
+  ) {
+    const oldData = await this.findOne(uid);
+
     const customer = await this.customerRepository.findOne({
       where: { uid },
     });
-
-    if (!customer) {
-      throw new NotFoundException('Customer not found');
-    }
 
     // Check nationalId uniqueness if nationalId is being updated
     if (updateDto.nationalId && updateDto.nationalId !== customer.nationalId) {
@@ -346,10 +347,28 @@ export class CustomersService {
       customer.location = updateDto.location as Record<string, any>;
     }
 
-    return await this.customerRepository.save(customer);
+    await this.customerRepository.save(customer);
+    const newData = await this.findOne(uid);
+
+    this.eventEmitter.emit('audit.log', {
+      adminId,
+      action: 'UPDATE',
+      entityName: 'Customer',
+      entityId: uid,
+      previousData: oldData,
+      newData,
+    } satisfies AuditEventPayload);
+
+    return newData;
   }
 
-  async toggleBlacklist(uid: string, dto: ToggleBlacklistDto) {
+  async toggleBlacklist(
+    uid: string,
+    dto: ToggleBlacklistDto,
+    adminId: string,
+  ) {
+    const oldData = await this.findOne(uid);
+
     const customer = await this.customerRepository.findOne({
       where: { uid },
     });
@@ -362,6 +381,18 @@ export class CustomersService {
     customer.blacklistReason = dto.isBlacklisted ? (dto.reason ?? null) : null;
     customer.blacklistedAt = dto.isBlacklisted ? new Date() : null;
 
-    return await this.customerRepository.save(customer);
+    await this.customerRepository.save(customer);
+    const newData = await this.findOne(uid);
+
+    this.eventEmitter.emit('audit.log', {
+      adminId,
+      action: 'UPDATE',
+      entityName: 'Customer',
+      entityId: uid,
+      previousData: oldData,
+      newData,
+    } satisfies AuditEventPayload);
+
+    return newData;
   }
 }

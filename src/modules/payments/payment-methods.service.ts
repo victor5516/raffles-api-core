@@ -1,16 +1,13 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PaymentMethod } from './entities/payment-method.entity';
 import { Currency } from '../currencies/entities/currency.entity';
 import { CreatePaymentMethodDto } from './dto/create-payment-method.dto';
 import { UpdatePaymentMethodDto } from './dto/update-payment-method.dto';
 import { S3Service } from '../../common/s3/s3.service';
+import { AuditEventPayload } from '../audit-logs/dto/audit-event.payload';
 
 @Injectable()
 export class PaymentMethodsService {
@@ -20,11 +17,13 @@ export class PaymentMethodsService {
     @InjectRepository(Currency)
     private currencyRepository: Repository<Currency>,
     private readonly s3Service: S3Service,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async createWithImage(
     createDto: CreatePaymentMethodDto,
     file: Express.Multer.File | undefined,
+    adminId: string,
   ) {
     // Validate currency exists
     const currency = await this.currencyRepository.findOne({
@@ -62,13 +61,22 @@ export class PaymentMethodsService {
       isActive: createDto.is_active ?? true,
     };
 
-    return this.create(entityLike);
+    return this.create(entityLike, adminId);
   }
 
-  async create(createDto: Partial<PaymentMethod>) {
+  async create(createDto: Partial<PaymentMethod>, adminId: string) {
     try {
       const paymentMethod = this.paymentMethodRepository.create(createDto);
-      return await this.paymentMethodRepository.save(paymentMethod);
+      const newRecord = await this.paymentMethodRepository.save(paymentMethod);
+      this.eventEmitter.emit('audit.log', {
+        adminId,
+        action: 'CREATE',
+        entityName: 'PaymentMethod',
+        entityId: newRecord.uid,
+        previousData: null,
+        newData: newRecord,
+      } satisfies AuditEventPayload);
+      return newRecord;
     } catch (error) {
       const err = error as { code?: string };
       if (err.code === '23505') {
@@ -112,10 +120,24 @@ export class PaymentMethodsService {
     };
   }
 
-  async update(uid: string, updateDto: Partial<PaymentMethod>) {
+  async update(
+    uid: string,
+    updateDto: Partial<PaymentMethod>,
+    adminId: string,
+  ) {
     try {
+      const oldData = await this.findOne(uid);
       await this.paymentMethodRepository.update(uid, updateDto);
-      return this.findOne(uid);
+      const newData = await this.findOne(uid);
+      this.eventEmitter.emit('audit.log', {
+        adminId,
+        action: 'UPDATE',
+        entityName: 'PaymentMethod',
+        entityId: uid,
+        previousData: oldData,
+        newData,
+      } satisfies AuditEventPayload);
+      return newData;
     } catch (error) {
       const err = error as { code?: string };
       if (err.code === '23505') {
@@ -131,6 +153,7 @@ export class PaymentMethodsService {
     uid: string,
     updateDto: UpdatePaymentMethodDto,
     file: Express.Multer.File | undefined,
+    adminId: string,
   ) {
     // Validate currency exists if currency_id is provided
     if (updateDto.currency_id) {
@@ -178,12 +201,21 @@ export class PaymentMethodsService {
         updateDto.ai_verification_enabled;
     if (updateDto.is_active !== undefined)
       updateEntityLike.isActive = updateDto.is_active;
-    return this.update(uid, updateEntityLike);
+    return this.update(uid, updateEntityLike, adminId);
   }
 
-  async remove(uid: string) {
+  async remove(uid: string, adminId: string) {
+    const oldData = await this.findOne(uid);
     const result = await this.paymentMethodRepository.delete(uid);
     if (result.affected === 0)
       throw new NotFoundException('Payment method not found');
+    this.eventEmitter.emit('audit.log', {
+      adminId,
+      action: 'DELETE',
+      entityName: 'PaymentMethod',
+      entityId: uid,
+      previousData: oldData,
+      newData: null,
+    } satisfies AuditEventPayload);
   }
 }

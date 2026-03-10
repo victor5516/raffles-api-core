@@ -1,10 +1,7 @@
-import {
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Raffle } from './entities/raffle.entity';
 import {
   Purchase,
@@ -15,6 +12,7 @@ import { UpdateRaffleDto } from './dto/update-raffle.dto';
 import { S3Service } from '../../common/s3/s3.service';
 import { CurrenciesService } from '../currencies/currencies.service';
 import { ConfigService } from '@nestjs/config';
+import { AuditEventPayload } from '../audit-logs/dto/audit-event.payload';
 
 @Injectable()
 export class RafflesService {
@@ -26,6 +24,7 @@ export class RafflesService {
     private readonly s3Service: S3Service,
     private readonly configService: ConfigService,
     private readonly currenciesService: CurrenciesService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async createWithImage(
@@ -65,6 +64,7 @@ export class RafflesService {
     file: Express.Multer.File | undefined,
     userId?: string,
     galleryFiles: Express.Multer.File[] = [],
+    adminId?: string,
   ) {
     if (file) {
       if (!userId) throw new UnauthorizedException();
@@ -132,7 +132,7 @@ export class RafflesService {
 
     const { gallery_keys_to_delete: _removed, ...dtoForUpdate } =
       updateRaffleDto;
-    return this.update(uid, dtoForUpdate);
+    return this.update(uid, dtoForUpdate, adminId);
   }
 
   async create(createRaffleDto: CreateRaffleDto) {
@@ -238,8 +238,12 @@ export class RafflesService {
     };
   }
 
-  async update(uid: string, updateRaffleDto: UpdateRaffleDto) {
-    await this.findOne(uid);
+  async update(
+    uid: string,
+    updateRaffleDto: UpdateRaffleDto,
+    adminId?: string,
+  ) {
+    const oldData = await this.findOne(uid);
 
     const updateData: Partial<Raffle> = {};
     if (updateRaffleDto.title) updateData.title = updateRaffleDto.title;
@@ -275,12 +279,33 @@ export class RafflesService {
       updateData.spreadsheetId = updateRaffleDto.spreadsheet_id;
 
     await this.raffleRepository.update(uid, updateData);
-    return this.findOne(uid);
+    const newData = await this.findOne(uid);
+
+    this.eventEmitter.emit('audit.log', {
+      adminId: adminId ?? null,
+      action: 'UPDATE',
+      entityName: 'Raffle',
+      entityId: uid,
+      previousData: oldData,
+      newData,
+    } satisfies AuditEventPayload);
+
+    return newData;
   }
 
-  async remove(uid: string) {
+  async remove(uid: string, adminId: string) {
+    const oldData = await this.findOne(uid);
     const result = await this.raffleRepository.delete(uid);
     if (result.affected === 0) throw new NotFoundException('Raffle not found');
+
+    this.eventEmitter.emit('audit.log', {
+      adminId,
+      action: 'DELETE',
+      entityName: 'Raffle',
+      entityId: uid,
+      previousData: oldData,
+      newData: null,
+    } satisfies AuditEventPayload);
   }
 
   private async transformRaffle(raffle: any, currencies: any[]) {

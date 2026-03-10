@@ -1,12 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-} from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -18,6 +10,8 @@ import { CurrenciesService } from './currencies.service';
 import { CreateCurrencyDto } from './dto/create-currency.dto';
 import { UpdateCurrencyDto } from './dto/update-currency.dto';
 import { Auth } from '../auth/decorators/admin-auth.decorator';
+import { ActiveUser } from '../auth/decorators/active-user.decorator';
+import { Admin } from '../auth/entities/admin.entity';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 
 @ApiTags('Currencies')
@@ -39,8 +33,8 @@ export class CurrenciesController {
   })
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  create(@Body() createDto: CreateCurrencyDto) {
-    return this.currenciesService.create(createDto);
+  create(@Body() createDto: CreateCurrencyDto, @ActiveUser() admin: Admin) {
+    return this.currenciesService.create(createDto, admin.uid);
   }
 
   @Get()
@@ -91,8 +85,12 @@ export class CurrenciesController {
   @ApiResponse({ status: 400, description: 'Datos inválidos' })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 404, description: 'Divisa no encontrada' })
-  update(@Param('uid') uid: string, @Body() updateDto: UpdateCurrencyDto) {
-    return this.currenciesService.update(uid, updateDto);
+  update(
+    @Param('uid') uid: string,
+    @Body() updateDto: UpdateCurrencyDto,
+    @ActiveUser() admin: Admin,
+  ) {
+    return this.currenciesService.update(uid, updateDto, admin.uid);
   }
 
   @Delete(':uid')
@@ -115,7 +113,7 @@ export class CurrenciesController {
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 404, description: 'Divisa no encontrada' })
-  remove(@Param('uid') uid: string) {
-    return this.currenciesService.remove(uid);
+  remove(@Param('uid') uid: string, @ActiveUser() admin: Admin) {
+    return this.currenciesService.remove(uid, admin.uid);
   }
 }

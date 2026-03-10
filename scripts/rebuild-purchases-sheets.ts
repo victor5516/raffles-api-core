@@ -6,11 +6,14 @@ async function bootstrap() {
   const app = await NestFactory.createApplicationContext(AppModule);
 
   try {
+    const raffleId = undefined;
     const cron = app.get(PurchasesCron);
-    const result = await cron.rebuildPurchasesSheets();
+    const result = await cron.rebuildPurchasesSheets(raffleId);
     // eslint-disable-next-line no-console
     console.log(
-      `Rebuild completo de Google Sheets: ${result.purchases} compras, ${result.rows} filas, ${result.sheets} pestañas actualizadas.`,
+      `Rebuild completo de Google Sheets${
+        raffleId ? ` para la rifa ${raffleId}` : ''
+      }: ${result.purchases} compras, ${result.rows} filas, ${result.sheets} pestañas actualizadas.`,
     );
   } catch (err) {
     // eslint-disable-next-line no-console

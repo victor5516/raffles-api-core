@@ -17,6 +17,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { CouponsModule } from './modules/coupons/coupons.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { S3Module } from './common/s3/s3.module';
 import { SqsModule } from './common/sqs/sqs.module';
 // import { MailModule } from './modules/mail/mail.module'; // Deshabilitado: SES no funciona
@@ -50,6 +51,7 @@ import { SqsModule } from './common/sqs/sqs.module';
     TicketsModule,
     DashboardModule,
     CouponsModule,
+    AuditLogsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
