@@ -51,6 +51,9 @@ export class PaymentMethod {
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
+  @Column({ type: 'jsonb', nullable: true, name: 'required_fields' })
+  requiredFields: any;
+
   @OneToMany(() => Purchase, (purchase) => purchase.paymentMethod)
   purchases: Purchase[];
 }

@@ -6,6 +6,7 @@ import {
   IsArray,
   IsInt,
   IsBoolean,
+  IsObject,
   Min,
   ValidateNested,
   IsUUID,
@@ -51,6 +52,20 @@ export class UpdatePaymentEntryDto {
   @IsOptional()
   @IsString()
   paymentMethodName?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value) as Record<string, unknown>;
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }
 
 export class UpdatePurchaseDto {

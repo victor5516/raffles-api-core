@@ -6,6 +6,7 @@ import {
   IsEmail,
   IsOptional,
   IsArray,
+  IsObject,
   ArrayMinSize,
   ArrayMaxSize,
   IsInt,
@@ -66,6 +67,25 @@ export class PaymentItemDto {
   @IsOptional()
   @IsString()
   paymentMethodName?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Metadata adicional para este pago (campos dinámicos del método de pago)',
+    example: { accountHolder: 'Pedro Perez' },
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }
 
 export class CustomerDto {
@@ -247,4 +267,23 @@ export class CreatePurchaseDto {
   @IsString({ each: true })
   @ArrayMaxSize(100)
   couponCodes?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Respuestas del cliente a los campos dinámicos del método de pago',
+    example: { accountHolder: 'Pedro Perez' },
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @IsObject()
+  metadata?: Record<string, unknown>;
 }

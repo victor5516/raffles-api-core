@@ -204,6 +204,7 @@ export class PurchasesService {
           verified: false,
           paymentMethodId: p.paymentMethodId || createDto.paymentMethodId,
           paymentMethodName: p.paymentMethodName || paymentMethod.name,
+          metadata: p.metadata,
         }));
       } else {
         paymentsArray = [
@@ -215,6 +216,7 @@ export class PurchasesService {
             verified: false,
             paymentMethodId: createDto.paymentMethodId,
             paymentMethodName: paymentMethod.name,
+            metadata: createDto.metadata,
           },
         ];
       }
@@ -711,6 +713,7 @@ export class PurchasesService {
           reviewedBy: p.reviewedBy,
           paymentMethodId: p.paymentMethodId ?? purchase.paymentMethodId,
           paymentMethodName: p.paymentMethodName,
+          metadata: (p as any).metadata,
         }));
         purchase.totalPaid = purchase.payments.reduce(
           (sum, p) => sum + Number(p.amount),

@@ -5,6 +5,7 @@ import {
   IsUUID,
   IsOptional,
   IsBoolean,
+  IsArray,
   Min,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
@@ -107,4 +108,26 @@ export class CreatePaymentMethodDto {
   })
   @IsBoolean()
   is_active?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Campos dinámicos que el cliente debe llenar al elegir este método de pago',
+    example: [{ key: 'accountHolder', label: 'Titular de la Cuenta' }],
+    type: 'array',
+    items: { type: 'object' },
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'string') {
+      try {
+        return JSON.parse(value) as any[];
+      } catch {
+        return value;
+      }
+    }
+    return value;
+  })
+  @IsArray()
+  requiredFields?: any[];
 }

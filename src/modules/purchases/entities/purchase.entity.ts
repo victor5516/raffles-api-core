@@ -24,6 +24,7 @@ export interface PaymentEntry {
   reviewedBy?: string;
   paymentMethodId?: string;
   paymentMethodName?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface PromotionSnapshot {
