@@ -8,6 +8,7 @@ import {
   PurchaseStatus,
 } from './entities/purchase.entity';
 import { PaymentMethod } from '../payments/entities/payment-method.entity';
+import { RaffleStatus } from '../raffles/entities/raffle.entity';
 import {
   GoogleSheetsService,
   SheetsPermissionError,
@@ -99,12 +100,13 @@ export class PurchasesCron {
     rows: number;
     sheets: number;
   }> {
-    return this.runExport(true, raffleId);
+    return this.runExport(true, raffleId, true);
   }
 
   private async runExport(
     fullRebuild: boolean,
     raffleId?: string,
+    includeInactiveRaffles = false,
   ): Promise<{
     purchases: number;
     rows: number;
@@ -128,6 +130,13 @@ export class PurchasesCron {
 
       if (raffleId) {
         where.raffle = { uid: raffleId };
+      }
+
+      if (!includeInactiveRaffles) {
+        where.raffle = {
+          ...(where.raffle ?? {}),
+          status: RaffleStatus.ACTIVE,
+        };
       }
 
       const purchases = await this.purchaseRepository.find({
