@@ -1,6 +1,11 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, DataSource } from 'typeorm';
 import * as ExcelJS from 'exceljs';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Customer } from './entities/customer.entity';
@@ -23,6 +28,7 @@ export class CustomersService {
     private ticketRepository: Repository<Ticket>,
     private s3Service: S3Service,
     private readonly eventEmitter: EventEmitter2,
+    private readonly dataSource: DataSource,
   ) {}
 
   private buildCustomersQuery(query: Record<string, unknown>) {
@@ -394,5 +400,55 @@ export class CustomersService {
     } satisfies AuditEventPayload);
 
     return newData;
+  }
+
+  async mergeCustomers(sourceId: string, targetId: string, adminId: string) {
+    if (sourceId === targetId) {
+      throw new BadRequestException(
+        'sourceId y targetId no pueden ser el mismo cliente',
+      );
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const [sourceCustomer, targetCustomer] = await Promise.all([
+        manager.findOne(Customer, { where: { uid: sourceId } }),
+        manager.findOne(Customer, { where: { uid: targetId } }),
+      ]);
+
+      if (!sourceCustomer) {
+        throw new NotFoundException(
+          `Cliente origen (${sourceId}) no encontrado`,
+        );
+      }
+
+      if (!targetCustomer) {
+        throw new NotFoundException(
+          `Cliente destino (${targetId}) no encontrado`,
+        );
+      }
+
+      await manager.update(
+        Purchase,
+        { customerId: sourceId },
+        { customerId: targetId },
+      );
+
+      await manager.remove(Customer, sourceCustomer);
+
+      this.eventEmitter.emit('audit.log', {
+        adminId,
+        action: 'DELETE',
+        entityName: 'Customer',
+        entityId: sourceId,
+        previousData: sourceCustomer,
+        newData: { mergedInto: targetId },
+      } satisfies AuditEventPayload);
+
+      return {
+        message: 'Clientes fusionados exitosamente',
+        deletedCustomerId: sourceId,
+        targetCustomerId: targetId,
+      };
+    });
   }
 }

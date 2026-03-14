@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Param, Query, Body, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Query,
+  Body,
+  Res,
+  Post,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -12,6 +21,7 @@ import { Response } from 'express';
 import { CustomersService } from './customers.service';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ToggleBlacklistDto } from './dto/toggle-blacklist.dto';
+import { MergeCustomersDto } from './dto/merge-customers.dto';
 import { Auth } from '../auth/decorators/admin-auth.decorator';
 import { ActiveUser } from '../auth/decorators/active-user.decorator';
 import { Admin } from '../auth/entities/admin.entity';
@@ -184,5 +194,40 @@ export class CustomersController {
     @ActiveUser() admin: Admin,
   ) {
     return this.customersService.toggleBlacklist(uid, dto, admin.uid);
+  }
+
+  @Post(':uid/merge')
+  @Auth([AdminRole.SUPER_ADMIN])
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary:
+      'Fusionar dos clientes (mover compras al destino y eliminar el origen)',
+  })
+  @ApiParam({
+    name: 'uid',
+    description: 'UID del cliente origen (el que desaparece)',
+    type: String,
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({ status: 200, description: 'Clientes fusionados exitosamente' })
+  @ApiResponse({
+    status: 400,
+    description: 'sourceId y targetId no pueden ser iguales',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede fusionar clientes',
+  })
+  @ApiResponse({ status: 404, description: 'Uno o ambos clientes no encontrados' })
+  mergeCustomers(
+    @Param('uid') uid: string,
+    @Body() dto: MergeCustomersDto,
+    @ActiveUser() admin: Admin,
+  ) {
+    return this.customersService.mergeCustomers(
+      uid,
+      dto.targetCustomerId,
+      admin.uid,
+    );
   }
 }
