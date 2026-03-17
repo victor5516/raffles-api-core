@@ -51,8 +51,7 @@ export class TicketsService {
       (purchase.ticketNumbers || []).map((num) => ({
         id: `${purchase.uid}-${num}`,
         ticket_number: num.toString(),
-        customer_name: purchase.customer?.fullName || 'N/A',
-        customer_national_id: purchase.customer?.nationalId || 'N/A',
+        purchase_id: purchase.uid,
         purchase_date:
           purchase.verifiedAt?.toISOString() ||
           purchase.submittedAt.toISOString(),

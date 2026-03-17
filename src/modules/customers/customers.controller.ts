@@ -33,7 +33,17 @@ export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Obtener lista de clientes con filtros opcionales' })
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
+  ])
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: 'Obtener lista de clientes con filtros opcionales',
+    description: 'Requiere autenticación de administrador.',
+  })
   @ApiQuery({
     name: 'nationalId',
     required: false,
@@ -118,8 +128,16 @@ export class CustomersController {
   }
 
   @Get(':uid')
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
+  ])
+  @ApiBearerAuth('JWT-auth')
   @ApiOperation({
     summary: 'Obtener un cliente por su UID con rifas y tickets asociados',
+    description: 'Requiere autenticación de administrador.',
   })
   @ApiParam({
     name: 'uid',

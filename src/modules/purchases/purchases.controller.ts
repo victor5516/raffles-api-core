@@ -122,7 +122,12 @@ export class PurchasesController {
     AdminRole.SUPER_ADMIN,
     AdminRole.AUDITOR,
   ])
-  @ApiOperation({ summary: 'Obtener todas las compras con filtros opcionales' })
+  @ApiOperation({
+    summary: 'Obtener todas las compras con filtros opcionales',
+    description:
+      'No retorna el objeto raffle. paymentMethod se reduce a { uid, name, accountHolderName }. ' +
+      'AUDITOR recibe los datos del cliente enmascarados, sin URL de comprobante y con fechas sin hora.',
+  })
   @ApiBearerAuth('JWT-auth')
   @ApiQuery({
     name: 'raffleId',
@@ -322,14 +327,10 @@ export class PurchasesController {
   }
 
   @Get(':uid')
-  @Auth([
-    AdminRole.VERIFIER,
-    AdminRole.VERIFIER_EXPORT,
-    AdminRole.VERIFIER_STATS,
-    AdminRole.SUPER_ADMIN,
-    AdminRole.AUDITOR,
-  ])
-  @ApiOperation({ summary: 'Obtener una compra por su UID' })
+  @Auth([AdminRole.SUPER_ADMIN])
+  @ApiOperation({
+    summary: 'Obtener una compra por su UID (solo Super Admin)',
+  })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
     name: 'uid',
@@ -340,6 +341,10 @@ export class PurchasesController {
   @ApiResponse({
     status: 200,
     description: 'Compra encontrada',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Solo Super Admin puede ver el detalle de una compra',
   })
   @ApiResponse({ status: 404, description: 'Compra no encontrada' })
   findOne(@Param('uid') uid: string, @ActiveUser() admin: Admin) {

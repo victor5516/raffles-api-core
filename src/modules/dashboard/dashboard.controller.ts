@@ -11,6 +11,8 @@ import { DashboardService } from './dashboard.service';
 import { AdminAuth, Auth } from '../auth/decorators/admin-auth.decorator';
 import { AdminRole } from '../auth/enums/admin-role.enum';
 import { RaffleStatsResponseDto } from './dto/raffle-stats-response.dto';
+import { ActiveUser } from '../auth/decorators/active-user.decorator';
+import { Admin } from '../auth/entities/admin.entity';
 
 @ApiTags('Dashboard')
 @Controller('dashboard')
@@ -19,7 +21,10 @@ export class DashboardController {
 
   @Get('overview')
   @AdminAuth()
-  @ApiOperation({ summary: 'Obtener resumen general del dashboard' })
+  @ApiOperation({
+    summary: 'Obtener resumen general del dashboard',
+    description: 'Solo SUPER_ADMIN recibe metrics.revenue.',
+  })
   @ApiBearerAuth('JWT-auth')
   @ApiQuery({
     name: 'currencyId',
@@ -32,8 +37,21 @@ export class DashboardController {
     description: 'Resumen del dashboard obtenido exitosamente',
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
-  getOverview(@Query('currencyId') currencyId?: string) {
-    return this.dashboardService.getOverview(currencyId);
+  async getOverview(
+    @Query('currencyId') currencyId: string | undefined,
+    @ActiveUser() admin: Admin,
+  ) {
+    const overview = await this.dashboardService.getOverview(currencyId);
+
+    if (admin.role === AdminRole.SUPER_ADMIN) {
+      return overview;
+    }
+
+    const { revenue: _revenue, ...restMetrics } = overview.metrics;
+    return {
+      ...overview,
+      metrics: restMetrics,
+    };
   }
 
   @Get('top-customers/:raffleId')
@@ -49,6 +67,36 @@ export class DashboardController {
     description: 'Top compradores obtenido exitosamente',
   })
   getTopCustomers(@Param('raffleId') raffleId: string) {
+    return this.dashboardService.getTopCustomers(raffleId);
+  }
+
+  @Get('admin/top-customers/:raffleId')
+  @Auth([
+    AdminRole.SUPER_ADMIN,
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
+  ])
+  @ApiOperation({
+    summary: 'Obtener top compradores por rifa (admin protegido, sin auditor)',
+  })
+  @ApiBearerAuth('JWT-auth')
+  @ApiParam({
+    name: 'raffleId',
+    description: 'UID de la rifa',
+    type: String,
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Top compradores obtenido exitosamente',
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({
+    status: 403,
+    description: 'Permisos insuficientes para consultar top compradores',
+  })
+  getTopCustomersAdmin(@Param('raffleId') raffleId: string) {
     return this.dashboardService.getTopCustomers(raffleId);
   }
 

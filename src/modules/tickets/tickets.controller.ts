@@ -8,7 +8,11 @@ export class TicketsController {
   constructor(private readonly ticketsService: TicketsService) {}
 
   @Get('search')
-  @ApiOperation({ summary: 'Buscar tickets por cédula y rifa' })
+  @ApiOperation({
+    summary: 'Buscar tickets por cédula y rifa',
+    description:
+      'Devuelve solo información de boletos (sin nombre ni cédula del cliente).',
+  })
   @ApiQuery({
     name: 'national_id',
     description: 'Cédula o identificación nacional del cliente',

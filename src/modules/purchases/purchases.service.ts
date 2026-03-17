@@ -42,6 +42,7 @@ import { ExportPurchasesDto } from './dto/export-purchases.dto';
 import { ExportReceiptsDto } from './dto/export-receipts.dto';
 import { S3Service } from '../../common/s3/s3.service';
 import { SqsService } from '../../common/sqs/sqs.service';
+import { VENEZUELA_TIMEZONE } from '../../common/utils/date.util';
 import { AiWebhookDto } from './dto/ai-webhook.dto';
 import { AuditWebhookDto } from './dto/audit-webhook.dto';
 import { Admin } from '../auth/entities/admin.entity';
@@ -1008,47 +1009,45 @@ export class PurchasesService {
 
     const [items, total] = await qb.getManyAndCount();
 
+    const isAuditor = admin?.role === AdminRole.AUDITOR;
+
     const signedItems = items.map((purchase) => {
+      const {
+        paymentScreenshotUrl: rawPaymentScreenshotUrl,
+        payments: rawPayments = [],
+        raffle: _raffle,
+        paymentMethod: _paymentMethod,
+        verifiedByAdmin: _verifiedByAdmin,
+        submittedAt,
+        verifiedAt,
+        auditReviewedAt,
+        ...purchaseRest
+      } = purchase;
       const paymentScreenshotUrl = this.s3Service.getCdnUrl(
-        purchase.paymentScreenshotUrl,
-      );
-      const raffleImageUrl = this.s3Service.getCdnUrl(
-        purchase.raffle?.imageUrl,
-      );
-      const paymentMethodImageUrl = this.s3Service.getCdnUrl(
-        purchase.paymentMethod?.imageUrl,
+        rawPaymentScreenshotUrl,
       );
 
-      const paymentsWithCdn = (purchase.payments ?? []).map((p) => ({
+      const paymentsWithCdn = rawPayments.map((p) => ({
         ...p,
         evidenceUrl: this.s3Service.getCdnUrl(p.evidenceUrl) ?? p.evidenceUrl,
       }));
+      const paymentsWithoutProof = rawPayments.map(({ evidenceUrl: _evidenceUrl, ...payment }) => payment);
 
-      const { currency, ...paymentMethodRest } = purchase.paymentMethod || {};
       const customer =
-        admin?.role === AdminRole.AUDITOR && purchase.customer
+        isAuditor && purchase.customer
           ? this.maskCustomerForAuditor(purchase.customer)
           : purchase.customer;
-      return {
-        ...purchase,
+
+      const basePurchase = {
+        ...purchaseRest,
         customer,
-        paymentScreenshotUrl:
-          paymentScreenshotUrl ?? purchase.paymentScreenshotUrl,
-        payments: paymentsWithCdn,
-        raffle: purchase.raffle
-          ? {
-              ...purchase.raffle,
-              imageUrl: raffleImageUrl ?? purchase.raffle.imageUrl,
-            }
-          : purchase.raffle,
         paymentMethod: purchase.paymentMethod
           ? {
-              ...paymentMethodRest,
-              currency: currency?.symbol || null,
-              imageUrl:
-                paymentMethodImageUrl ?? purchase.paymentMethod.imageUrl,
+              uid: purchase.paymentMethod.uid,
+              name: purchase.paymentMethod.name,
+              accountHolderName: purchase.paymentMethod.accountHolderName,
             }
-          : purchase.paymentMethod,
+          : null,
         verifiedByAdmin: purchase.verifiedByAdmin
           ? {
               uid: purchase.verifiedByAdmin.uid,
@@ -1056,6 +1055,26 @@ export class PurchasesService {
             }
           : null,
         aiAnalysisResult: purchase?.aiAnalysisResult?.data ?? null,
+      };
+
+      if (isAuditor) {
+        return {
+          ...basePurchase,
+          payments: paymentsWithoutProof,
+          submittedAt: this.formatDateOnlyForAuditor(submittedAt),
+          verifiedAt: this.formatDateOnlyForAuditor(verifiedAt),
+          auditReviewedAt: this.formatDateOnlyForAuditor(auditReviewedAt),
+        };
+      }
+
+      return {
+        ...basePurchase,
+        paymentScreenshotUrl:
+          paymentScreenshotUrl ?? rawPaymentScreenshotUrl,
+        payments: paymentsWithCdn,
+        submittedAt,
+        verifiedAt,
+        auditReviewedAt,
       };
     });
 
@@ -1135,17 +1154,45 @@ export class PurchasesService {
   }
 
   /**
-   * For AUDITOR role: returns only non-sensitive customer fields (nationalId, uid).
-   * fullName, email, phone are omitted.
+   * For AUDITOR role: returns only non-sensitive customer fields.
    */
   private maskCustomerForAuditor(
     customer: Customer | null,
-  ): { uid: string; nationalId: string } | null {
+  ): { uid: string; fullName: string; nationalId: string | null; phone: string | null } | null {
     if (!customer) return null;
     return {
       uid: customer.uid,
-      nationalId: customer.nationalId,
+      fullName: customer.fullName,
+      nationalId: this.maskDigitsPreservingEdges(customer.nationalId),
+      phone: this.maskDigitsPreservingEdges(customer.phone),
     };
+  }
+
+  private maskDigitsPreservingEdges(
+    value: string | null | undefined,
+  ): string | null {
+    const digits = typeof value === 'string' ? value.replace(/\D/g, '') : '';
+    if (!digits) return null;
+
+    if (digits.length <= 4) {
+      return '*'.repeat(digits.length);
+    }
+
+    const visibleDigits = 2;
+    return `${digits.slice(0, visibleDigits)}${'*'.repeat(
+      digits.length - visibleDigits * 2,
+    )}${digits.slice(-visibleDigits)}`;
+  }
+
+  private formatDateOnlyForAuditor(
+    date: Date | string | null | undefined,
+  ): string | null {
+    if (!date) return null;
+    const parsedDate = typeof date === 'string' ? new Date(date) : date;
+
+    return parsedDate.toLocaleDateString('es-VE', {
+      timeZone: VENEZUELA_TIMEZONE,
+    });
   }
 
   async remove(uid: string, adminId: string) {
