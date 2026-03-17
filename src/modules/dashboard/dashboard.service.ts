@@ -151,7 +151,6 @@ export class DashboardService {
       .innerJoin('purchase.customer', 'customer')
       .select('customer.uid', 'uid')
       .addSelect('customer.fullName', 'fullName')
-      .addSelect('customer.email', 'email')
       .addSelect('SUM(purchase.ticketQuantity)', 'totalTickets')
       .where('purchase.raffleId = :raffleId', { raffleId })
       .andWhere('purchase.status NOT IN (:...excludedStatuses)', {
@@ -167,7 +166,6 @@ export class DashboardService {
     return topCustomers.map((c) => ({
       uid: c.uid,
       name: c.fullName,
-      email: c.email,
       totalTickets: Number(c.totalTickets),
     }));
   }
