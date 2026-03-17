@@ -85,21 +85,36 @@ interface NormalizedPercentageRule {
   minTickets: number;
 }
 
-function getPercentageRules(config: Record<string, unknown>): NormalizedPercentageRule[] {
+function getPercentageRules(
+  config: Record<string, unknown>,
+): NormalizedPercentageRule[] {
   if (config.rules && Array.isArray(config.rules)) {
-    const rules = (config.rules as Array<{ percentage?: unknown; discount?: unknown; minTickets?: unknown }>)
+    const rules = (
+      config.rules as Array<{
+        percentage?: unknown;
+        discount?: unknown;
+        minTickets?: unknown;
+      }>
+    )
       .map((r) => {
         const pct = Number(r?.percentage ?? r?.discount);
         const min = typeof r?.minTickets === 'number' ? r.minTickets : 0;
-        if (!Number.isFinite(pct) || pct < 0 || pct > 100 || min < 0) return null;
+        if (!Number.isFinite(pct) || pct < 0 || pct > 100 || min < 0)
+          return null;
         return { percentage: pct, minTickets: min };
       })
       .filter((r): r is NormalizedPercentageRule => r != null);
     if (rules.length > 0) return rules;
   }
   const percentage = Number(config.percentage ?? config.discount);
-  const minTickets = typeof config.minTickets === 'number' ? config.minTickets : 0;
-  if (Number.isFinite(percentage) && percentage >= 0 && percentage <= 100 && minTickets >= 0) {
+  const minTickets =
+    typeof config.minTickets === 'number' ? config.minTickets : 0;
+  if (
+    Number.isFinite(percentage) &&
+    percentage >= 0 &&
+    percentage <= 100 &&
+    minTickets >= 0
+  ) {
     return [{ percentage, minTickets }];
   }
   return [];

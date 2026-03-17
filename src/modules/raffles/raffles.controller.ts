@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Put, Body, Param, Delete, UseInterceptors, UploadedFiles } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Delete,
+  UseInterceptors,
+  UploadedFiles,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -32,6 +42,7 @@ export class RafflesController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @UseInterceptors(
     FileFieldsInterceptor(
@@ -99,6 +110,7 @@ export class RafflesController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @UseInterceptors(
     FileFieldsInterceptor(
@@ -150,6 +162,7 @@ export class RafflesController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @ApiOperation({ summary: 'Eliminar una rifa' })
   @ApiBearerAuth('JWT-auth')

@@ -18,7 +18,10 @@ export class ReconciliationJobResponseDto {
   @ApiProperty({ enum: ReconciliationJobStatus })
   status: ReconciliationJobStatus;
 
-  @ApiProperty({ nullable: true, description: 'null mientras status=processing' })
+  @ApiProperty({
+    nullable: true,
+    description: 'null mientras status=processing',
+  })
   result: ReconciliationResult | null;
 
   @ApiProperty({ nullable: true, description: 'null salvo status=failed' })

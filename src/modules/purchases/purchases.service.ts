@@ -27,6 +27,7 @@ import {
 } from './entities/purchase.entity';
 import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
 import { Customer } from 'src/modules/customers/entities/customer.entity';
+import { trimCustomerData } from 'src/modules/customers/utils/trim-customer-data';
 import {
   Raffle,
   RaffleSelectionType,
@@ -440,10 +441,11 @@ export class PurchasesService {
       const purchase = await manager.findOne(Purchase, { where: { uid } });
       if (!purchase) throw new NotFoundException('Purchase not found');
 
-      // Business rule: VERIFIER and VERIFIER_EXPORT can only verify, not reject
+      // Business rule: VERIFIER, VERIFIER_EXPORT and VERIFIER_STATS can only verify, not reject
       const isVerifierLike =
         adminRole === AdminRole.VERIFIER ||
-        adminRole === AdminRole.VERIFIER_EXPORT;
+        adminRole === AdminRole.VERIFIER_EXPORT ||
+        adminRole === AdminRole.VERIFIER_STATS;
       if (isVerifierLike && status === PurchaseStatus.REJECTED) {
         throw new ForbiddenException(
           'Verifiers cannot reject purchases. Only verification is allowed.',
@@ -551,7 +553,8 @@ export class PurchasesService {
   ) {
     const isVerifierLike =
       adminRole === AdminRole.VERIFIER ||
-      adminRole === AdminRole.VERIFIER_EXPORT;
+      adminRole === AdminRole.VERIFIER_EXPORT ||
+      adminRole === AdminRole.VERIFIER_STATS;
     const effectiveDto: UpdatePurchaseDto = isVerifierLike
       ? { notes: updateDto.notes }
       : updateDto;
@@ -1359,6 +1362,7 @@ export class PurchasesService {
     manager: EntityManager,
     data: any,
   ): Promise<Customer> {
+    data = trimCustomerData(data);
     const rawNationalId = data.national_id || data.nationalId;
     const normalizedNationalId =
       typeof rawNationalId === 'string'

@@ -118,6 +118,7 @@ export class PurchasesController {
   @Auth([
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
     AdminRole.SUPER_ADMIN,
     AdminRole.AUDITOR,
   ])
@@ -207,10 +208,7 @@ export class PurchasesController {
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 403, description: 'Permisos insuficientes' })
-  findAll(
-    @Query() query: Record<string, unknown>,
-    @ActiveUser() admin: Admin,
-  ) {
+  findAll(@Query() query: Record<string, unknown>, @ActiveUser() admin: Admin) {
     return this.purchasesService.findAll(query, admin);
   }
 
@@ -327,6 +325,7 @@ export class PurchasesController {
   @Auth([
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
     AdminRole.SUPER_ADMIN,
     AdminRole.AUDITOR,
   ])
@@ -353,7 +352,12 @@ export class PurchasesController {
       storage: memoryStorage(),
     }),
   )
-  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @Auth([
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
+    AdminRole.SUPER_ADMIN,
+  ])
   @ApiOperation({
     summary: 'Actualizar una compra',
     description:
@@ -385,7 +389,8 @@ export class PurchasesController {
   ) {
     const isVerifierLike =
       user?.role === AdminRole.VERIFIER ||
-      user?.role === AdminRole.VERIFIER_EXPORT;
+      user?.role === AdminRole.VERIFIER_EXPORT ||
+      user?.role === AdminRole.VERIFIER_STATS;
     if (isVerifierLike) {
       if (file) {
         throw new ForbiddenException('Solo puede actualizar el campo notas.');
@@ -436,7 +441,12 @@ export class PurchasesController {
   }
 
   @Patch(':uid/status')
-  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @Auth([
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
+    AdminRole.SUPER_ADMIN,
+  ])
   @ApiOperation({ summary: 'Actualizar el estado de una compra' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({
@@ -467,7 +477,12 @@ export class PurchasesController {
   }
 
   @Patch(':uid/audit')
-  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @Auth([
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
+    AdminRole.SUPER_ADMIN,
+  ])
   @ApiOperation({
     summary: 'Marcar compra como auditada',
     description:
@@ -516,7 +531,12 @@ export class PurchasesController {
   }
 
   @Get('summary/by-raffle')
-  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @Auth([
+    AdminRole.VERIFIER,
+    AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
+    AdminRole.SUPER_ADMIN,
+  ])
   @ApiOperation({
     summary: 'Obtener resumen de órdenes por rifa y currency',
     description:
@@ -624,7 +644,7 @@ export class PurchasesController {
   }
 
   @Get('reconcile/jobs')
-  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @Auth(AdminRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Listar historial de jobs de conciliación' })
   @ApiBearerAuth('JWT-auth')
   @ApiQuery({ name: 'raffleId', required: false, type: String })
@@ -648,7 +668,7 @@ export class PurchasesController {
   }
 
   @Get('reconcile/jobs/:jobId')
-  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @Auth(AdminRole.SUPER_ADMIN)
   @ApiOperation({
     summary: 'Consultar estado de un job de conciliación',
     description:
@@ -669,7 +689,7 @@ export class PurchasesController {
   }
 
   @Post('reconcile')
-  @Auth([AdminRole.VERIFIER, AdminRole.VERIFIER_EXPORT, AdminRole.SUPER_ADMIN])
+  @Auth(AdminRole.SUPER_ADMIN)
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(),
@@ -707,7 +727,8 @@ export class PurchasesController {
   })
   @ApiResponse({
     status: 202,
-    description: 'Job de conciliación iniciado. Consultar statusUrl para el resultado.',
+    description:
+      'Job de conciliación iniciado. Consultar statusUrl para el resultado.',
     type: ReconciliationJobCreatedDto,
   })
   async reconcileAsync(

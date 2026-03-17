@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner, TableColumn } from 'typeorm';
 
-export class AddRequiredFieldsAndMetadata1771100000000
-  implements MigrationInterface
-{
+export class AddRequiredFieldsAndMetadata1771100000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.addColumn(
       'payment_method',

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class MovePurchaseMetadataToPayments1771200000000
-  implements MigrationInterface
-{
+export class MovePurchaseMetadataToPayments1771200000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Backfill: move legacy purchase.metadata into payments[0].metadata
     await queryRunner.query(`
@@ -28,4 +26,3 @@ export class MovePurchaseMetadataToPayments1771200000000
     `);
   }
 }
-

@@ -107,7 +107,13 @@ export class AuthController {
         },
         role: {
           type: 'string',
-          enum: ['super_admin', 'verifier', 'verifier_export'],
+          enum: [
+            'super_admin',
+            'verifier',
+            'verifier_export',
+            'verifier_stats',
+            'auditor',
+          ],
           example: 'verifier',
         },
         createdAt: {

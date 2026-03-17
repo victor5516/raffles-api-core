@@ -101,7 +101,7 @@ export class ReconciliationJobService implements OnModuleInit {
   async findOne(uid: string): Promise<ReconciliationJob> {
     const job = await this.jobRepo.findOne({
       where: { uid },
-      relations: ['raffle']
+      relations: ['raffle'],
     });
     if (!job) {
       throw new NotFoundException(`Job de conciliación ${uid} no encontrado`);
@@ -148,13 +148,10 @@ export class ReconciliationJobService implements OnModuleInit {
           where: { uid: In(ids) },
           relations: ['customer'],
         });
-        purchaseById = purchases.reduce<Record<string, Purchase>>(
-          (acc, p) => {
-            acc[p.uid] = p;
-            return acc;
-          },
-          {},
-        );
+        purchaseById = purchases.reduce<Record<string, Purchase>>((acc, p) => {
+          acc[p.uid] = p;
+          return acc;
+        }, {});
       }
     }
 

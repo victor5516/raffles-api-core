@@ -141,6 +141,7 @@ export class CustomersController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @ApiOperation({ summary: 'Actualizar información de un cliente' })
   @ApiBearerAuth('JWT-auth')
@@ -218,7 +219,10 @@ export class CustomersController {
     status: 403,
     description: 'Solo Super Admin puede fusionar clientes',
   })
-  @ApiResponse({ status: 404, description: 'Uno o ambos clientes no encontrados' })
+  @ApiResponse({
+    status: 404,
+    description: 'Uno o ambos clientes no encontrados',
+  })
   mergeCustomers(
     @Param('uid') uid: string,
     @Body() dto: MergeCustomersDto,

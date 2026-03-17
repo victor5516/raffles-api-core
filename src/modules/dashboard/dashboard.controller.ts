@@ -53,7 +53,7 @@ export class DashboardController {
   }
 
   @Get('raffles/:raffleId/stats')
-  @Auth(AdminRole.SUPER_ADMIN)
+  @Auth([AdminRole.SUPER_ADMIN, AdminRole.VERIFIER_STATS])
   @ApiOperation({ summary: 'Obtener estadísticas del dashboard por rifa' })
   @ApiBearerAuth('JWT-auth')
   @ApiParam({

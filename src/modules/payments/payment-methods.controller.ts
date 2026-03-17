@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Put, Body, Param, Delete, UseInterceptors, UploadedFile } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Body,
+  Param,
+  Delete,
+  UseInterceptors,
+  UploadedFile,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -29,6 +39,7 @@ export class PaymentMethodsController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @UseInterceptors(
     FileInterceptor('image', {
@@ -60,7 +71,11 @@ export class PaymentMethodsController {
         // ignore
       }
     }
-    return this.paymentMethodsService.createWithImage(createDto, file, admin.uid);
+    return this.paymentMethodsService.createWithImage(
+      createDto,
+      file,
+      admin.uid,
+    );
   }
 
   @Get()
@@ -95,6 +110,7 @@ export class PaymentMethodsController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @UseInterceptors(
     FileInterceptor('image', {
@@ -133,7 +149,12 @@ export class PaymentMethodsController {
         // ignore
       }
     }
-    return this.paymentMethodsService.updateWithImage(uid, updateDto, file, admin.uid);
+    return this.paymentMethodsService.updateWithImage(
+      uid,
+      updateDto,
+      file,
+      admin.uid,
+    );
   }
 
   @Delete(':uid')
@@ -141,6 +162,7 @@ export class PaymentMethodsController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @ApiOperation({ summary: 'Eliminar un método de pago' })
   @ApiBearerAuth('JWT-auth')

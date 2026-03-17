@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+} from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -24,6 +32,7 @@ export class CurrenciesController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @ApiOperation({ summary: 'Crear una nueva divisa' })
   @ApiBearerAuth('JWT-auth')
@@ -69,6 +78,7 @@ export class CurrenciesController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @ApiOperation({ summary: 'Actualizar una divisa existente' })
   @ApiBearerAuth('JWT-auth')
@@ -98,6 +108,7 @@ export class CurrenciesController {
     AdminRole.SUPER_ADMIN,
     AdminRole.VERIFIER,
     AdminRole.VERIFIER_EXPORT,
+    AdminRole.VERIFIER_STATS,
   ])
   @ApiOperation({ summary: 'Eliminar una divisa' })
   @ApiBearerAuth('JWT-auth')

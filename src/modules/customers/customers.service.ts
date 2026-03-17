@@ -14,6 +14,7 @@ import { Ticket } from '../tickets/entities/ticket.entity';
 import { Raffle } from '../raffles/entities/raffle.entity';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { ToggleBlacklistDto } from './dto/toggle-blacklist.dto';
+import { trimCustomerData } from './utils/trim-customer-data';
 import { S3Service } from '../../common/s3/s3.service';
 import { AuditEventPayload } from '../audit-logs/dto/audit-event.payload';
 
@@ -303,11 +304,11 @@ export class CustomersService {
     };
   }
 
-  async update(
-    uid: string,
-    updateDto: UpdateCustomerDto,
-    adminId: string,
-  ) {
+  async update(uid: string, updateDto: UpdateCustomerDto, adminId: string) {
+    const dto = trimCustomerData({
+      ...updateDto,
+    } as Record<string, unknown>) as UpdateCustomerDto;
+
     const oldData = await this.findOne(uid);
 
     const customer = await this.customerRepository.findOne({
@@ -315,9 +316,9 @@ export class CustomersService {
     });
 
     // Check nationalId uniqueness if nationalId is being updated
-    if (updateDto.nationalId && updateDto.nationalId !== customer.nationalId) {
+    if (dto.nationalId && dto.nationalId !== customer.nationalId) {
       const existingCustomer = await this.customerRepository.findOne({
-        where: { nationalId: updateDto.nationalId },
+        where: { nationalId: dto.nationalId },
       });
 
       if (existingCustomer && existingCustomer.uid !== uid) {
@@ -326,9 +327,9 @@ export class CustomersService {
     }
 
     // Check email uniqueness if email is being updated
-    if (updateDto.email && updateDto.email !== customer.email) {
+    if (dto.email && dto.email !== customer.email) {
       const existingCustomer = await this.customerRepository.findOne({
-        where: { email: updateDto.email },
+        where: { email: dto.email },
       });
 
       if (existingCustomer && existingCustomer.uid !== uid) {
@@ -337,20 +338,20 @@ export class CustomersService {
     }
 
     // Update fields
-    if (updateDto.nationalId !== undefined) {
-      customer.nationalId = updateDto.nationalId;
+    if (dto.nationalId !== undefined) {
+      customer.nationalId = dto.nationalId;
     }
-    if (updateDto.fullName !== undefined) {
-      customer.fullName = updateDto.fullName;
+    if (dto.fullName !== undefined) {
+      customer.fullName = dto.fullName;
     }
-    if (updateDto.email !== undefined) {
-      customer.email = updateDto.email;
+    if (dto.email !== undefined) {
+      customer.email = dto.email;
     }
-    if (updateDto.phone !== undefined) {
-      customer.phone = updateDto.phone;
+    if (dto.phone !== undefined) {
+      customer.phone = dto.phone;
     }
-    if (updateDto.location !== undefined) {
-      customer.location = updateDto.location as Record<string, any>;
+    if (dto.location !== undefined) {
+      customer.location = dto.location as Record<string, any>;
     }
 
     await this.customerRepository.save(customer);
@@ -368,11 +369,7 @@ export class CustomersService {
     return newData;
   }
 
-  async toggleBlacklist(
-    uid: string,
-    dto: ToggleBlacklistDto,
-    adminId: string,
-  ) {
+  async toggleBlacklist(uid: string, dto: ToggleBlacklistDto, adminId: string) {
     const oldData = await this.findOne(uid);
 
     const customer = await this.customerRepository.findOne({
