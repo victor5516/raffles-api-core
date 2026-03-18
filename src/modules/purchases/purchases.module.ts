@@ -21,6 +21,7 @@ import { ReconciliationJobListener } from './listeners/reconciliation-job.listen
 import { MailModule } from '../mail/mail.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { PurchasesMailListener } from './listeners/purchases-mail.listener';
+import { PurchaseSentryInterceptor } from './interceptors/purchase-sentry.interceptor';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { PurchasesMailListener } from './listeners/purchases-mail.listener';
     ReconciliationJobService,
     PurchasesMailListener,
     ReconciliationJobListener,
+    PurchaseSentryInterceptor,
   ],
   exports: [PurchasesService, PurchasesExportService],
 })

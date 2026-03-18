@@ -58,9 +58,11 @@ import {
   ReconciliationJobCreatedDto,
   ReconciliationJobResponseDto,
 } from './dto/reconciliation-job.dto';
+import { PurchaseSentryInterceptor } from './interceptors/purchase-sentry.interceptor';
 
 @ApiTags('Purchases')
 @Controller('purchases')
+@UseInterceptors(PurchaseSentryInterceptor)
 export class PurchasesController {
   constructor(
     private readonly purchasesService: PurchasesService,
