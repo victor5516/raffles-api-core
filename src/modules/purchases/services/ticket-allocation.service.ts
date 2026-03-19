@@ -63,7 +63,7 @@ export class TicketAllocationService {
     // 2. Range & Duplicate Check (In Memory)
     const uniqueRequested = new Set(numbers);
     if (uniqueRequested.size !== numbers.length) {
-      throw new BadRequestException('ticket_numbers contains duplicates');
+      throw new BadRequestException('Los números de entrada contienen duplicados');
     }
 
     const invalid = numbers.filter((n) => n < 0 || n >= raffle.totalTickets);
@@ -82,7 +82,7 @@ export class TicketAllocationService {
 
     if (occupiedCount > 0) {
       throw new ConflictException(
-        'Some selected tickets are already reserved or verified.',
+        'Algunos números ya fueron reservados por otro comprador. Por favor selecciona otros.',
       );
     }
 
@@ -116,7 +116,7 @@ export class TicketAllocationService {
 
     if (available < quantity) {
       throw new ConflictException(
-        `Not enough tickets. Available: ${available}`,
+        `No hay suficientes entradas. Disponibles: ${available}`,
       );
     }
   }
@@ -196,7 +196,7 @@ export class TicketAllocationService {
     const available = raffle.totalTickets - soldSet.size;
 
     if (available < purchase.ticketQuantity) {
-      throw new ConflictException('Not enough tickets available.');
+      throw new ConflictException('No hay suficientes boletos disponibles');
     }
 
     // Random Generation
@@ -218,7 +218,7 @@ export class TicketAllocationService {
 
     if (toAssign.length < purchase.ticketQuantity) {
       throw new ConflictException(
-        'Could not assign tickets (congestion). Try again.',
+        'No se pudieron asignar los boletos por congestión. Intenta de nuevo.',
       );
     }
 

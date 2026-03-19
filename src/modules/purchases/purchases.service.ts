@@ -109,7 +109,7 @@ export class PurchasesService {
         relations: ['currency'],
       });
       if (!paymentMethod) {
-        throw new NotFoundException('Payment method not found');
+        throw new NotFoundException('Método de pago no encontrado');
       }
       const unitPriceInPaymentCurrency =
         Number(raffle.ticketPrice) * Number(paymentMethod.currency?.value ?? 1);
@@ -1394,9 +1394,11 @@ export class PurchasesService {
       lock: { mode: 'pessimistic_write' },
     });
 
-    if (!raffle) throw new NotFoundException('Raffle not found');
+    if (!raffle) throw new NotFoundException('Evento no encontrado');
     if (raffle.status !== RaffleStatus.ACTIVE)
-      throw new BadRequestException('Raffle is not active');
+      throw new BadRequestException(
+        'Las compras para este evento no están disponibles en este momento',
+      );
 
     return raffle;
   }
