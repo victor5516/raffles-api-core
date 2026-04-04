@@ -3,7 +3,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PurchasesService } from './purchases.service';
 import { PurchasesExportService } from './services/purchases-export.service';
 import { PurchaseVerificationService } from './services/purchase-verification.service';
-import { PurchasesController } from './purchases.controller';
+import {
+  PurchasesController,
+  PurchasesSheetsRebuildController,
+} from './purchases.controller';
 import { PurchasesCron } from './purchases.cron';
 import { Purchase } from './entities/purchase.entity';
 import { Ticket } from '../tickets/entities/ticket.entity';
@@ -22,6 +25,7 @@ import { MailModule } from '../mail/mail.module';
 import { CouponsModule } from '../coupons/coupons.module';
 import { PurchasesMailListener } from './listeners/purchases-mail.listener';
 import { PurchaseSentryInterceptor } from './interceptors/purchase-sentry.interceptor';
+import { RafflesModule } from '../raffles/raffles.module';
 
 @Module({
   imports: [
@@ -34,10 +38,11 @@ import { PurchaseSentryInterceptor } from './interceptors/purchase-sentry.interc
       Currency,
       ReconciliationJob,
     ]),
+    RafflesModule,
     MailModule,
     CouponsModule,
   ],
-  controllers: [PurchasesController],
+  controllers: [PurchasesController, PurchasesSheetsRebuildController],
   providers: [
     PurchasesService,
     PurchasesExportService,

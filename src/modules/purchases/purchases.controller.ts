@@ -18,6 +18,7 @@ import {
   BadRequestException,
   HttpCode,
   HttpStatus,
+  Logger,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -59,11 +60,14 @@ import {
   ReconciliationJobResponseDto,
 } from './dto/reconciliation-job.dto';
 import { PurchaseSentryInterceptor } from './interceptors/purchase-sentry.interceptor';
+import { RafflesService } from '../raffles/raffles.service';
 
 @ApiTags('Purchases')
 @Controller('purchases')
 @UseInterceptors(PurchaseSentryInterceptor)
 export class PurchasesController {
+  private readonly logger = new Logger(PurchasesController.name);
+
   constructor(
     private readonly purchasesService: PurchasesService,
     private readonly purchasesCron: PurchasesCron,
@@ -311,6 +315,7 @@ export class PurchasesController {
   }
 
   @Post('sheets/rebuild')
+  @HttpCode(HttpStatus.ACCEPTED)
   @Auth([AdminRole.SUPER_ADMIN])
   @ApiOperation({
     summary: 'Reconstruir Google Sheets de compras desde la base de datos',
@@ -319,13 +324,54 @@ export class PurchasesController {
   })
   @ApiBearerAuth('JWT-auth')
   @ApiResponse({
-    status: 201,
-    description: 'Reconstrucción de sheets ejecutada exitosamente',
+    status: 202,
+    description:
+      'Reconstrucción aceptada; se ejecuta en segundo plano (puede tardar varios minutos)',
   })
   @ApiResponse({ status: 401, description: 'No autorizado' })
   @ApiResponse({ status: 403, description: 'Solo Super Admin' })
-  rebuildSheets() {
-    return this.purchasesCron.rebuildPurchasesSheets();
+  rebuildSheets(): { status: 'accepted'; message: string } {
+    void this.purchasesCron.rebuildPurchasesSheets().catch((err: unknown) => {
+      this.logger.error(
+        'Background global rebuild of purchases sheets failed',
+        err instanceof Error ? err.stack : String(err),
+      );
+    });
+    return {
+      status: 'accepted',
+      message:
+        'La reconstrucción de Google Sheets se está ejecutando en segundo plano.',
+    };
+  }
+
+  @Post('rebuild-sheets')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Auth([AdminRole.SUPER_ADMIN])
+  @ApiOperation({
+    summary: 'Reconstruir Google Sheets de compras (global)',
+    description:
+      'Alias del endpoint `POST /api/v1/purchases/sheets/rebuild`. Reconstruye sheets para todas las rifas.',
+  })
+  @ApiBearerAuth('JWT-auth')
+  @ApiResponse({
+    status: 202,
+    description:
+      'Reconstrucción aceptada; se ejecuta en segundo plano (puede tardar varios minutos)',
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Solo Super Admin' })
+  rebuildPurchasesSheets(): { status: 'accepted'; message: string } {
+    void this.purchasesCron.rebuildPurchasesSheets().catch((err: unknown) => {
+      this.logger.error(
+        'Background global rebuild of purchases sheets failed',
+        err instanceof Error ? err.stack : String(err),
+      );
+    });
+    return {
+      status: 'accepted',
+      message:
+        'La reconstrucción de Google Sheets se está ejecutando en segundo plano.',
+    };
   }
 
   @Get(':uid')
@@ -797,5 +843,57 @@ export class PurchasesController {
         data: JSON.stringify(payload),
       })),
     );
+  }
+}
+
+@ApiTags('Purchases')
+@Controller('raffles/:raffleId/purchases')
+export class PurchasesSheetsRebuildController {
+  private readonly logger = new Logger(PurchasesSheetsRebuildController.name);
+
+  constructor(
+    private readonly purchasesCron: PurchasesCron,
+    private readonly rafflesService: RafflesService,
+  ) {}
+
+  @Post('rebuild-sheets')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @Auth([AdminRole.SUPER_ADMIN])
+  @ApiOperation({
+    summary: 'Reconstruir Google Sheets de compras por rifa',
+    description:
+      'Reconstruye las pestañas de compras para una rifa específica usando su `raffleId` (UID).',
+  })
+  @ApiBearerAuth('JWT-auth')
+  @ApiParam({
+    name: 'raffleId',
+    description: 'UID de la rifa a reconstruir',
+    type: String,
+  })
+  @ApiResponse({
+    status: 202,
+    description:
+      'Reconstrucción aceptada; se ejecuta en segundo plano (puede tardar varios minutos)',
+  })
+  @ApiResponse({ status: 401, description: 'No autorizado' })
+  @ApiResponse({ status: 403, description: 'Solo Super Admin' })
+  @ApiResponse({ status: 404, description: 'Rifa no encontrada' })
+  async rebuildPurchasesSheetsForRaffle(
+    @Param('raffleId') raffleId: string,
+  ): Promise<{ status: 'accepted'; message: string; raffleId: string }> {
+    // Valida existencia de la rifa (y devuelve 404 consistente).
+    await this.rafflesService.findOne(raffleId);
+    void this.purchasesCron.rebuildPurchasesSheets(raffleId).catch((err: unknown) => {
+      this.logger.error(
+        `Background rebuild of purchases sheets failed for raffle ${raffleId}`,
+        err instanceof Error ? err.stack : String(err),
+      );
+    });
+    return {
+      status: 'accepted',
+      message:
+        'La reconstrucción de Google Sheets se está ejecutando en segundo plano.',
+      raffleId,
+    };
   }
 }
