@@ -40,27 +40,36 @@ data_path="./certbot"
 email="$SSL_EMAIL" # Email from .env
 staging=0
 
-if [ -d "$data_path" ]; then
-  read -p "Data already exists in $data_path. Do you want to continue and replace certificates? (y/N) " decision
+if [ -e "$data_path" ] && [ ! -w "$data_path" ]; then
+  echo "Error: $data_path exists but is not writable by $(id -un) (common if Docker created it as root)."
+  echo "Fix on the host, then re-run this script:"
+  echo "  sudo chown -R \"$(id -un):$(id -gn)\" \"$data_path\""
+  echo "  # or reset:  sudo rm -rf \"$data_path\" && mkdir -p \"$data_path/conf\" \"$data_path/www\""
+  exit 1
+fi
+if ! mkdir -p "$data_path/conf" "$data_path/www"; then
+  echo "Error: cannot create $data_path/conf or $data_path/www"
+  exit 1
+fi
+if ! touch "$data_path/.write_test" 2>/dev/null; then
+  echo "Error: $data_path is not writable by $(id -un)."
+  exit 1
+fi
+rm -f "$data_path/.write_test"
+
+if [ -d "$data_path/conf/live" ] || [ -d "$data_path/conf/archive" ]; then
+  read -p "Certificate data already exists in $data_path. Continue and replace? (y/N) " decision
   if [ "$decision" != "Y" ] && [ "$decision" != "y" ]; then
     exit
   fi
 fi
 
-if [ ! -e "$data_path/conf/options-ssl-nginx.conf" ] || [ ! -e "$data_path/conf/ssl-dhparams.pem" ]; then
-  echo "### Downloading recommended TLS parameters..."
-  mkdir -p "$data_path/conf"
-  curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf > "$data_path/conf/options-ssl-nginx.conf"
-  curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/certbot/ssl-dhparams.pem > "$data_path/conf/ssl-dhparams.pem"
-fi
-
 echo "### Creating dummy certificates for $domains..."
 for domain in "${domains[@]}"; do
-  path="$data_path/conf/live/$domain"
-  mkdir -p "$path"
-  if [ ! -e "$path/fullchain.pem" ]; then
+  if [ ! -e "$data_path/conf/live/$domain/fullchain.pem" ]; then
     echo "Generating dummy for $domain..."
     $DOCKER_COMPOSE run --rm --entrypoint "\
+      mkdir -p /etc/letsencrypt/live/$domain && \
       openssl req -x509 -nodes -newkey rsa:$rsa_key_size -days 1\
         -keyout '/etc/letsencrypt/live/$domain/privkey.pem' \
         -out '/etc/letsencrypt/live/$domain/fullchain.pem' \
@@ -70,8 +79,20 @@ done
 
 echo "### Starting Nginx..."
 $DOCKER_COMPOSE up --force-recreate -d nginx
-echo "### Nginx started. Waiting..."
-sleep 5
+echo "### Nginx started. Waiting for :80..."
+for i in $(seq 1 30); do
+  code="$(curl -sS --connect-timeout 2 -o /dev/null -w "%{http_code}" "http://127.0.0.1:80/" 2>/dev/null || echo "000")"
+  if [[ "$code" =~ ^(200|301|302|404|403)$ ]]; then
+    echo "Nginx is accepting connections on port 80 (HTTP $code)."
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "Error: Nginx did not become ready on http://127.0.0.1:80 . Check:  $DOCKER_COMPOSE logs nginx"
+    echo "Let's Encrypt needs port 80 reachable from the internet (Security Group + DNS A for your API host -> this server's Elastic IP)."
+    exit 1
+  fi
+  sleep 2
+done
 
 echo "### Requesting real certificates..."
 for domain in "${domains[@]}"; do
@@ -100,4 +121,9 @@ for domain in "${domains[@]}"; do
 done
 
 echo "### Reloading Nginx to apply changes..."
-$DOCKER_COMPOSE exec nginx nginx -s reload
+if $DOCKER_COMPOSE exec -T nginx nginx -s reload 2>/dev/null; then
+  echo "Nginx reload OK."
+else
+  echo "Reload failed (container may be restarting). Restarting nginx..."
+  $DOCKER_COMPOSE up -d nginx
+fi
