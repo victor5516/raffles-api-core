@@ -1,0 +1,22 @@
+# Certbot / Let's Encrypt (often root-owned; breaks Docker build context for non-root users)
+certbot/
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+
+# Git and IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Env files (image should not bake secrets; runtime uses env_file / compose)
+.env
+.env.*
+!.env.example
+
+# Logs and misc
+*.log
+npm-debug.log*
