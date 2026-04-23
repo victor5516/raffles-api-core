@@ -16,7 +16,9 @@ services:
 
   # --- ROUTER (NGINX) ---
   nginx:
-    image: nginx:alpine
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
     container_name: raffles_nginx
     restart: always
     ports:
