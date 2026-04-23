@@ -1,5 +1,5 @@
 services:
-  # --- TENANT 1: SIMON BOLI ---
+  # --- TENANT: SIMON BOLI ---
   api_simon:
     build:
       context: .
@@ -7,21 +7,6 @@ services:
     container_name: api_simon
     restart: always
     env_file: .env.simon
-    volumes:
-      - ./google-credentials.json:/app/google-credentials.json
-    environment:
-      - TZ=UTC
-    networks:
-      - app-net
-
-  # --- TENANT 2: SANTI EL BELICO ---
-  api_santi:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: api_santi
-    restart: always
-    env_file: .env.santi
     volumes:
       - ./google-credentials.json:/app/google-credentials.json
     environment:
@@ -40,7 +25,6 @@ services:
     environment:
       # We pass the variables so that envsubst (nginx's templater) uses them
       - DOMAIN_CLIENT_1=${DOMAIN_CLIENT_1}
-      - DOMAIN_CLIENT_2=${DOMAIN_CLIENT_2}
     volumes:
       # NOTE: We mount in /templates/, not in /conf.d/
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
@@ -48,7 +32,6 @@ services:
       - ./certbot/www:/var/www/certbot
     depends_on:
       - api_simon
-      - api_santi
     networks:
       - app-net
 

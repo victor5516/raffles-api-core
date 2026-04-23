@@ -22,8 +22,19 @@ else
   exit 1
 fi
 
-# Dynamic domain list based on .env
-domains=($DOMAIN_CLIENT_1 $DOMAIN_CLIENT_2)
+# Dynamic domain list based on .env (single tenant by default)
+domains=()
+if [ -n "$DOMAIN_CLIENT_1" ]; then
+  domains+=("$DOMAIN_CLIENT_1")
+fi
+if [ -n "${DOMAIN_CLIENT_2:-}" ]; then
+  domains+=("$DOMAIN_CLIENT_2")
+fi
+
+if [ ${#domains[@]} -eq 0 ]; then
+  echo "Error: define at least DOMAIN_CLIENT_1 in .env"
+  exit 1
+fi
 rsa_key_size=4096
 data_path="./certbot"
 email="$SSL_EMAIL" # Email from .env
