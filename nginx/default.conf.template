@@ -31,9 +31,13 @@ server {
     ssl_certificate /etc/letsencrypt/live/${DOMAIN_CLIENT_1}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${DOMAIN_CLIENT_1}/privkey.pem;
 
-    # Mejores prácticas SSL
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    # TLS inline (no depende de options-ssl-nginx.conf descargado por certbot en el host)
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
 
     location / {
         proxy_pass http://backend_client_1;
