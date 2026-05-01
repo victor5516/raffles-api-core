@@ -15,7 +15,6 @@ import { CreateRaffleDto } from './dto/create-raffle.dto';
 import { UpdateRaffleDto } from './dto/update-raffle.dto';
 import { S3Service } from '../../common/s3/s3.service';
 import { CurrenciesService } from '../currencies/currencies.service';
-import { ConfigService } from '@nestjs/config';
 import { AuditEventPayload } from '../audit-logs/dto/audit-event.payload';
 
 @Injectable()
@@ -26,7 +25,6 @@ export class RafflesService {
     @InjectRepository(Purchase)
     private purchaseRepository: Repository<Purchase>,
     private readonly s3Service: S3Service,
-    private readonly configService: ConfigService,
     private readonly currenciesService: CurrenciesService,
     private readonly eventEmitter: EventEmitter2,
   ) {}
@@ -228,14 +226,22 @@ export class RafflesService {
 
     const galleryUrls =
       raffle.gallery?.length > 0
-        ? raffle.gallery
-            .map((key) => this.s3Service.getCdnUrl(key))
-            .filter((url): url is string => url != null)
+        ? (
+            await Promise.all(
+              raffle.gallery.map((key) =>
+                this.s3Service.getPresignedGetUrl(key),
+              ),
+            )
+          ).filter((url): url is string => url != null)
         : [];
+
+    const imageUrl =
+      (await this.s3Service.getPresignedGetUrl(raffle.imageUrl)) ??
+      raffle.imageUrl;
 
     return {
       ...raffle,
-      imageUrl: this.s3Service.getCdnUrl(raffle.imageUrl) ?? raffle.imageUrl,
+      imageUrl,
       gallery: galleryUrls,
       galleryKeys: raffle.gallery ?? [],
       prices: this.calculatePrices(raffle.ticketPrice, currencies),
@@ -315,12 +321,22 @@ export class RafflesService {
   private async transformRaffle(raffle: any, currencies: any[]) {
     const ticketsSold = raffle.ticketsSold || 0;
 
-    const cdnUrl = this.configService.get<string>('CLOUDFRONT_URL');
+    const imageUrl = raffle.imageUrl
+      ? await this.s3Service.getPresignedGetUrl(raffle.imageUrl)
+      : null;
+    const gallery =
+      raffle.gallery?.length > 0
+        ? await Promise.all(
+            raffle.gallery.map((key: string) =>
+              this.s3Service.getPresignedGetUrl(key),
+            ),
+          )
+        : [];
 
     return {
       ...raffle,
-      imageUrl: raffle.imageUrl ? `${cdnUrl}/${raffle.imageUrl}` : null, // Fallback si falla S3
-      gallery: raffle.gallery?.map((key) => `${cdnUrl}/${key}`) ?? [],
+      imageUrl,
+      gallery: gallery.filter((url): url is string => url != null),
       tickets_sold: ticketsSold,
       percentage_sold:
         raffle.totalTickets > 0 ? (ticketsSold / raffle.totalTickets) * 100 : 0,

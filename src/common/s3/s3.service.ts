@@ -62,17 +62,24 @@ export class S3Service {
 
   async getPresignedGetUrl(
     key: string | undefined | null,
-    expiresSeconds = 900,
+    expiresSeconds?: number,
   ): Promise<string | undefined | null> {
     if (!key) return key;
     if (this.isHttpUrl(key)) return key;
+
+    const fromEnv = Number(
+      this.configService.get<string>('S3_PRESIGN_EXPIRES_SECONDS'),
+    );
+    const expires =
+      expiresSeconds ??
+      (Number.isFinite(fromEnv) && fromEnv > 0 ? fromEnv : 900);
 
     const cmd = new GetObjectCommand({
       Bucket: this.bucket,
       Key: key,
     });
 
-    return await getSignedUrl(this.client, cmd, { expiresIn: expiresSeconds });
+    return await getSignedUrl(this.client, cmd, { expiresIn: expires });
   }
 
   getCdnUrl(key: string | undefined | null): string | undefined | null {

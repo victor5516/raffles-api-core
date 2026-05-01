@@ -162,22 +162,25 @@ export class TicketsService {
 
     const rafflesArray = Array.from(raffleMap.values());
 
-    // Generate CDN URLs for all raffle images
-    const rafflesWithCdnUrls = rafflesArray.map((raffleData) => {
-      const imageUrl =
-        this.s3Service.getCdnUrl(raffleData.raffle.imageUrl) ??
-        raffleData.raffle.imageUrl;
+    // Presigned GET URLs for raffle images
+    const rafflesWithPresignedUrls = await Promise.all(
+      rafflesArray.map(async (raffleData) => {
+        const imageUrl =
+          (await this.s3Service.getPresignedGetUrl(
+            raffleData.raffle.imageUrl,
+          )) ?? raffleData.raffle.imageUrl;
 
-      return {
-        ...raffleData,
-        raffle: {
-          ...raffleData.raffle,
-          imageUrl,
-        },
-      };
-    });
+        return {
+          ...raffleData,
+          raffle: {
+            ...raffleData.raffle,
+            imageUrl,
+          },
+        };
+      }),
+    );
 
-    return { raffles: rafflesWithCdnUrls };
+    return { raffles: rafflesWithPresignedUrls };
   }
 
   async findByTicketNumber(ticketNumber: number) {
@@ -263,21 +266,24 @@ export class TicketsService {
 
     const rafflesArray = Array.from(raffleMap.values());
 
-    const rafflesWithCdnUrls = rafflesArray.map((raffleData) => {
-      const imageUrl =
-        this.s3Service.getCdnUrl(raffleData.raffle.imageUrl) ??
-        raffleData.raffle.imageUrl;
+    const rafflesWithPresignedUrls = await Promise.all(
+      rafflesArray.map(async (raffleData) => {
+        const imageUrl =
+          (await this.s3Service.getPresignedGetUrl(
+            raffleData.raffle.imageUrl,
+          )) ?? raffleData.raffle.imageUrl;
 
-      return {
-        ...raffleData,
-        raffle: {
-          ...raffleData.raffle,
-          imageUrl,
-        },
-      };
-    });
+        return {
+          ...raffleData,
+          raffle: {
+            ...raffleData.raffle,
+            imageUrl,
+          },
+        };
+      }),
+    );
 
-    return { raffles: rafflesWithCdnUrls };
+    return { raffles: rafflesWithPresignedUrls };
   }
 
   async searchUnified(q: string) {

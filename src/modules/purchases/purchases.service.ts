@@ -1011,72 +1011,82 @@ export class PurchasesService {
 
     const isAuditor = admin?.role === AdminRole.AUDITOR;
 
-    const signedItems = items.map((purchase) => {
-      const {
-        paymentScreenshotUrl: rawPaymentScreenshotUrl,
-        payments: rawPayments = [],
-        raffle: _raffle,
-        paymentMethod: _paymentMethod,
-        verifiedByAdmin: _verifiedByAdmin,
-        submittedAt,
-        verifiedAt,
-        auditReviewedAt,
-        ...purchaseRest
-      } = purchase;
-      const paymentScreenshotUrl = this.s3Service.getCdnUrl(
-        rawPaymentScreenshotUrl,
-      );
+    const signedItems = await Promise.all(
+      items.map(async (purchase) => {
+        const {
+          paymentScreenshotUrl: rawPaymentScreenshotUrl,
+          payments: rawPayments = [],
+          raffle: _raffle,
+          paymentMethod: _paymentMethod,
+          verifiedByAdmin: _verifiedByAdmin,
+          submittedAt,
+          verifiedAt,
+          auditReviewedAt,
+          ...purchaseRest
+        } = purchase;
 
-      const paymentsWithCdn = rawPayments.map((p) => ({
-        ...p,
-        evidenceUrl: this.s3Service.getCdnUrl(p.evidenceUrl) ?? p.evidenceUrl,
-      }));
-      const paymentsWithoutProof = rawPayments.map(({ evidenceUrl: _evidenceUrl, ...payment }) => payment);
+        const paymentsWithoutProof = rawPayments.map(
+          ({ evidenceUrl: _evidenceUrl, ...payment }) => payment,
+        );
 
-      const customer =
-        isAuditor && purchase.customer
-          ? this.maskCustomerForAuditor(purchase.customer)
-          : purchase.customer;
+        const customer =
+          isAuditor && purchase.customer
+            ? this.maskCustomerForAuditor(purchase.customer)
+            : purchase.customer;
 
-      const basePurchase = {
-        ...purchaseRest,
-        customer,
-        paymentMethod: purchase.paymentMethod
-          ? {
-              uid: purchase.paymentMethod.uid,
-              name: purchase.paymentMethod.name,
-              accountHolderName: purchase.paymentMethod.accountHolderName,
-            }
-          : null,
-        verifiedByAdmin: purchase.verifiedByAdmin
-          ? {
-              uid: purchase.verifiedByAdmin.uid,
-              fullName: purchase.verifiedByAdmin.fullName,
-            }
-          : null,
-        aiAnalysisResult: purchase?.aiAnalysisResult?.data ?? null,
-      };
+        const basePurchase = {
+          ...purchaseRest,
+          customer,
+          paymentMethod: purchase.paymentMethod
+            ? {
+                uid: purchase.paymentMethod.uid,
+                name: purchase.paymentMethod.name,
+                accountHolderName: purchase.paymentMethod.accountHolderName,
+              }
+            : null,
+          verifiedByAdmin: purchase.verifiedByAdmin
+            ? {
+                uid: purchase.verifiedByAdmin.uid,
+                fullName: purchase.verifiedByAdmin.fullName,
+              }
+            : null,
+          aiAnalysisResult: purchase?.aiAnalysisResult?.data ?? null,
+        };
 
-      if (isAuditor) {
+        if (isAuditor) {
+          return {
+            ...basePurchase,
+            payments: paymentsWithoutProof,
+            submittedAt: this.formatDateOnlyForAuditor(submittedAt),
+            verifiedAt: this.formatDateOnlyForAuditor(verifiedAt),
+            auditReviewedAt: this.formatDateOnlyForAuditor(auditReviewedAt),
+          };
+        }
+
+        const paymentScreenshotUrl = await this.s3Service.getPresignedGetUrl(
+          rawPaymentScreenshotUrl,
+        );
+
+        const paymentsWithCdn = await Promise.all(
+          rawPayments.map(async (p) => ({
+            ...p,
+            evidenceUrl:
+              (await this.s3Service.getPresignedGetUrl(p.evidenceUrl)) ??
+              p.evidenceUrl,
+          })),
+        );
+
         return {
           ...basePurchase,
-          payments: paymentsWithoutProof,
-          submittedAt: this.formatDateOnlyForAuditor(submittedAt),
-          verifiedAt: this.formatDateOnlyForAuditor(verifiedAt),
-          auditReviewedAt: this.formatDateOnlyForAuditor(auditReviewedAt),
+          paymentScreenshotUrl:
+            paymentScreenshotUrl ?? rawPaymentScreenshotUrl,
+          payments: paymentsWithCdn,
+          submittedAt,
+          verifiedAt,
+          auditReviewedAt,
         };
-      }
-
-      return {
-        ...basePurchase,
-        paymentScreenshotUrl:
-          paymentScreenshotUrl ?? rawPaymentScreenshotUrl,
-        payments: paymentsWithCdn,
-        submittedAt,
-        verifiedAt,
-        auditReviewedAt,
-      };
-    });
+      }),
+    );
 
     return {
       items: signedItems,
@@ -1108,18 +1118,21 @@ export class PurchasesService {
       }
     }
 
-    const paymentScreenshotUrl = this.s3Service.getCdnUrl(
-      purchase.paymentScreenshotUrl,
-    );
-    const raffleImageUrl = this.s3Service.getCdnUrl(purchase.raffle?.imageUrl);
-    const paymentMethodImageUrl = this.s3Service.getCdnUrl(
-      purchase.paymentMethod?.imageUrl,
-    );
+    const [paymentScreenshotUrl, raffleImageUrl, paymentMethodImageUrl] =
+      await Promise.all([
+        this.s3Service.getPresignedGetUrl(purchase.paymentScreenshotUrl),
+        this.s3Service.getPresignedGetUrl(purchase.raffle?.imageUrl),
+        this.s3Service.getPresignedGetUrl(purchase.paymentMethod?.imageUrl),
+      ]);
 
-    const paymentsWithCdn = (purchase.payments ?? []).map((p) => ({
-      ...p,
-      evidenceUrl: this.s3Service.getCdnUrl(p.evidenceUrl) ?? p.evidenceUrl,
-    }));
+    const paymentsWithCdn = await Promise.all(
+      (purchase.payments ?? []).map(async (p) => ({
+        ...p,
+        evidenceUrl:
+          (await this.s3Service.getPresignedGetUrl(p.evidenceUrl)) ??
+          p.evidenceUrl,
+      })),
+    );
 
     const redeemedCoupons = await this.couponsService.findByPurchaseId(uid);
 
@@ -1211,7 +1224,7 @@ export class PurchasesService {
   }
 
   /**
-   * Uploads a payment evidence file to S3 and returns the key + CDN URL.
+   * Uploads a payment evidence file to S3 and returns the key + presigned GET URL.
    */
   async uploadEvidence(
     file: Express.Multer.File,
@@ -1220,8 +1233,8 @@ export class PurchasesService {
       throw new BadRequestException('File is required');
     }
     const key = await this.uploadPaymentScreenshot(file, 'evidence');
-    const url = this.s3Service.getCdnUrl(key);
-    return { key, url: url || key };
+    const url = (await this.s3Service.getPresignedGetUrl(key)) ?? key;
+    return { key, url };
   }
 
   async generateReceiptsPdf(

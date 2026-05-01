@@ -39,7 +39,8 @@ export class PurchasesExportService {
       const evidenceKey =
         (purchase.payments ?? []).find((entry) => entry.evidenceUrl?.trim())
           ?.evidenceUrl ?? purchase.paymentScreenshotUrl;
-      const evidenceUrl = this.s3Service.getCdnUrl(evidenceKey) ?? evidenceKey;
+      const evidenceUrl =
+        (await this.s3Service.getPresignedGetUrl(evidenceKey)) ?? evidenceKey;
 
       doc
         .fontSize(16)
