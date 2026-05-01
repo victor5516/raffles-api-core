@@ -14,6 +14,19 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { RaffleStatus, RaffleSelectionType } from '../entities/raffle.entity';
 import { PromotionStrategy } from '../utils/pricing.util';
 
+const extractSpreadsheetId = (value: unknown): unknown => {
+  if (typeof value !== 'string') return value;
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) return trimmedValue;
+
+  const match = trimmedValue.match(
+    /(?:https?:\/\/)?docs\.google\.com\/spreadsheets\/d\/([^/?#]+)/i,
+  );
+
+  return match?.[1] ?? trimmedValue;
+};
+
 export class CreateRaffleDto {
   @ApiProperty({
     description: 'Título de la rifa',
@@ -67,6 +80,7 @@ export class CreateRaffleDto {
     description: 'ID del Google Spreadsheet asociado a esta rifa',
     example: '1AbCdEfGhIjKlMnOpQrStUvWxYz1234567890',
   })
+  @Transform(({ value }) => extractSpreadsheetId(value))
   @IsNotEmpty()
   @IsString()
   spreadsheet_id: string;
