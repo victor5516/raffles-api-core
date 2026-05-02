@@ -25,16 +25,16 @@ import {
   PaymentEntry,
   PromotionSnapshot,
 } from './entities/purchase.entity';
-import { Ticket } from 'src/modules/tickets/entities/ticket.entity';
-import { Customer } from 'src/modules/customers/entities/customer.entity';
-import { trimCustomerData } from 'src/modules/customers/utils/trim-customer-data';
+import { Ticket } from '../tickets/entities/ticket.entity';
+import { Customer } from '../customers/entities/customer.entity';
+import { trimCustomerData } from '../customers/utils/trim-customer-data';
 import {
   Raffle,
   RaffleSelectionType,
   RaffleStatus,
-} from 'src/modules/raffles/entities/raffle.entity';
-import { PaymentMethod } from 'src/modules/payments/entities/payment-method.entity';
-import { Currency } from 'src/modules/currencies/entities/currency.entity';
+} from '../raffles/entities/raffle.entity';
+import { PaymentMethod } from '../payments/entities/payment-method.entity';
+import { Currency } from '../currencies/entities/currency.entity';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
@@ -59,6 +59,7 @@ import { TicketAllocationService } from './services/ticket-allocation.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { Coupon } from '../coupons/entities/coupon.entity';
 import { AuditEventPayload } from '../audit-logs/dto/audit-event.payload';
+import { SpinsService } from '../spins/spins.service';
 
 @Injectable()
 export class PurchasesService {
@@ -81,6 +82,7 @@ export class PurchasesService {
     private readonly verificationService: PurchaseVerificationService,
     private readonly allocationService: TicketAllocationService,
     private readonly couponsService: CouponsService,
+    private readonly spinsService: SpinsService,
   ) {}
 
   // ===========================================================================
@@ -277,6 +279,20 @@ export class PurchasesService {
 
     const createdPurchase = result.purchase;
     createdPurchase.paymentMethod = result.paymentMethod;
+    await this.grantPurchaseRewardTokensForEvent(
+      createdPurchase.customerId,
+      createdPurchase.ticketQuantity,
+      createdPurchase.uid,
+      'created',
+    );
+    if (createdPurchase.status === PurchaseStatus.VERIFIED) {
+      await this.grantPurchaseRewardTokensForEvent(
+        createdPurchase.customerId,
+        createdPurchase.ticketQuantity,
+        createdPurchase.uid,
+        'verified',
+      );
+    }
     // 5. Post-Process (Async Notifications)
     await this.notifyPostPurchase(createdPurchase, 'created');
 
@@ -384,6 +400,20 @@ export class PurchasesService {
 
     const createdPurchase = result.purchase;
     createdPurchase.paymentMethod = result.paymentMethod;
+    await this.grantPurchaseRewardTokensForEvent(
+      createdPurchase.customerId,
+      createdPurchase.ticketQuantity,
+      createdPurchase.uid,
+      'created',
+    );
+    if (createdPurchase.status === PurchaseStatus.VERIFIED) {
+      await this.grantPurchaseRewardTokensForEvent(
+        createdPurchase.customerId,
+        createdPurchase.ticketQuantity,
+        createdPurchase.uid,
+        'verified',
+      );
+    }
     await this.notifyPostPurchase(createdPurchase, 'created_audit');
     return createdPurchase;
   }
@@ -416,6 +446,13 @@ export class PurchasesService {
             verificationResult.purchase,
           );
           await manager.save(Purchase, verificationResult.purchase);
+
+          await this.spinsService.grantPurchaseRewardTokens({
+            customerId: verificationResult.purchase.customerId,
+            purchasedTickets: verificationResult.purchase.ticketQuantity,
+            sourceReferenceBase: `purchase:${verificationResult.purchase.uid}:verified`,
+            manager,
+          });
         }
 
         return verificationResult.purchase;
@@ -489,6 +526,12 @@ export class PurchasesService {
             purchase,
           );
         }
+        await this.spinsService.grantPurchaseRewardTokens({
+          customerId: purchase.customerId,
+          purchasedTickets: purchase.ticketQuantity,
+          sourceReferenceBase: `purchase:${purchase.uid}:verified`,
+          manager,
+        });
       }
       await manager.save(Purchase, purchase);
 
@@ -1546,6 +1589,19 @@ export class PurchasesService {
       msg: 'New purchase created',
       raffleId: purchase.raffleId,
       purchaseId: purchase.uid,
+    });
+  }
+
+  private async grantPurchaseRewardTokensForEvent(
+    customerId: string,
+    ticketQuantity: number,
+    purchaseId: string,
+    eventKey: 'created' | 'verified',
+  ): Promise<void> {
+    await this.spinsService.grantPurchaseRewardTokens({
+      customerId,
+      purchasedTickets: ticketQuantity,
+      sourceReferenceBase: `purchase:${purchaseId}:${eventKey}`,
     });
   }
 

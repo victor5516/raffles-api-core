@@ -26,6 +26,7 @@ import { CouponsModule } from '../coupons/coupons.module';
 import { PurchasesMailListener } from './listeners/purchases-mail.listener';
 import { PurchaseSentryInterceptor } from './interceptors/purchase-sentry.interceptor';
 import { RafflesModule } from '../raffles/raffles.module';
+import { SpinsModule } from '../spins/spins.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { RafflesModule } from '../raffles/raffles.module';
     RafflesModule,
     MailModule,
     CouponsModule,
+    SpinsModule,
   ],
   controllers: [PurchasesController, PurchasesSheetsRebuildController],
   providers: [

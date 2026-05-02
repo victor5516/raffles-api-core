@@ -20,14 +20,16 @@ type UploadBufferArgs = {
 export class S3Service {
   private readonly client: S3Client;
   private readonly bucket: string;
+  private readonly region: string;
 
   constructor(private readonly configService: ConfigService) {
     this.bucket = this.configService.getOrThrow<string>('S3_BUCKET');
+    this.region = this.configService.getOrThrow<string>('AWS_REGION');
 
     // Credentials are read from env automatically by the AWS SDK:
     // AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN (optional)
     this.client = new S3Client({
-      region: this.configService.getOrThrow<string>('AWS_REGION'),
+      region: this.region,
       credentials: {
         accessKeyId: this.configService.getOrThrow<string>('AWS_ACCESS_KEY_ID'),
         secretAccessKey: this.configService.getOrThrow<string>(
@@ -65,7 +67,8 @@ export class S3Service {
     expiresSeconds?: number,
   ): Promise<string | undefined | null> {
     if (!key) return key;
-    if (this.isHttpUrl(key)) return key;
+    const keyToSign = this.resolveS3KeyForSigning(key);
+    if (!keyToSign) return key;
 
     const fromEnv = Number(
       this.configService.get<string>('S3_PRESIGN_EXPIRES_SECONDS'),
@@ -76,7 +79,7 @@ export class S3Service {
 
     const cmd = new GetObjectCommand({
       Bucket: this.bucket,
-      Key: key,
+      Key: keyToSign,
     });
 
     return await getSignedUrl(this.client, cmd, { expiresIn: expires });
@@ -97,6 +100,45 @@ export class S3Service {
 
   private isHttpUrl(value: string) {
     return value.startsWith('http://') || value.startsWith('https://');
+  }
+
+  private resolveS3KeyForSigning(
+    value: string,
+  ): string | null {
+    if (!this.isHttpUrl(value)) {
+      return value;
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return null;
+    }
+
+    const host = parsed.hostname;
+    const path = parsed.pathname.replace(/^\/+/, '');
+
+    // Virtual-hosted-style: <bucket>.s3.<region>.amazonaws.com/<key>
+    if (host === `${this.bucket}.s3.${this.region}.amazonaws.com`) {
+      return path || null;
+    }
+    if (host === `${this.bucket}.s3.amazonaws.com`) {
+      return path || null;
+    }
+
+    // Path-style: s3.<region>.amazonaws.com/<bucket>/<key>
+    if (host === `s3.${this.region}.amazonaws.com`) {
+      const bucketPrefix = `${this.bucket}/`;
+      if (path === this.bucket) return null;
+      if (path.startsWith(bucketPrefix)) {
+        return path.slice(bucketPrefix.length) || null;
+      }
+      return null;
+    }
+
+    // Any external HTTP URL should pass through unchanged.
+    return null;
   }
 
   private getExtension(originalName: string) {
