@@ -55,6 +55,9 @@ export class Raffle {
   @Column({ name: 'show_progress_bar', default: false })
   showProgressBar: boolean;
 
+  @Column({ name: 'show_top_buyers', default: false })
+  showTopBuyers: boolean;
+
   @Column()
   deadline: Date;
 

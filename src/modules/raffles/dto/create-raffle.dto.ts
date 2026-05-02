@@ -186,4 +186,16 @@ export class CreateRaffleDto {
   })
   @IsBoolean()
   show_progress_bar?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Mostrar top de compradores en el cliente',
+    example: false,
+  })
+  @IsOptional()
+  @Transform(({ obj }) => {
+    const raw = obj.show_top_buyers;
+    return raw === 'true' || raw === true;
+  })
+  @IsBoolean()
+  show_top_buyers?: boolean;
 }

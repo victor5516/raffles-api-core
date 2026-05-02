@@ -152,6 +152,7 @@ export class RafflesService {
       promotionConfig: createRaffleDto.promotion_config ?? null,
       termsAndConditions: createRaffleDto.terms_and_conditions ?? null,
       showProgressBar: createRaffleDto.show_progress_bar ?? false,
+      showTopBuyers: createRaffleDto.show_top_buyers ?? false,
       spreadsheetId: createRaffleDto.spreadsheet_id,
     });
     const savedRaffle = await this.raffleRepository.save(raffle);
@@ -285,6 +286,8 @@ export class RafflesService {
       updateData.termsAndConditions = updateRaffleDto.terms_and_conditions;
     if (updateRaffleDto.show_progress_bar !== undefined)
       updateData.showProgressBar = updateRaffleDto.show_progress_bar;
+    if (updateRaffleDto.show_top_buyers !== undefined)
+      updateData.showTopBuyers = updateRaffleDto.show_top_buyers;
     if (updateRaffleDto.spreadsheet_id !== undefined)
       updateData.spreadsheetId = updateRaffleDto.spreadsheet_id;
 
