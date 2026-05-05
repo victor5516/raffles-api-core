@@ -245,6 +245,10 @@ export class CustomersService {
       raffleImageUrls.map((item) => [item.raffleId, item.imageUrl]),
     );
 
+    const statusByPurchase = new Map<string, string>(
+      purchases.map((p) => [p.uid, p.status]),
+    );
+
     // Build response structure
     const rafflesData = Array.from(rafflesMap.values()).map(
       ({ raffle, purchases: rafflePurchases }) => {
@@ -296,6 +300,9 @@ export class CustomersService {
             ticketNumber: t.ticketNumber,
             assignedAt: t.assignedAt,
             purchaseId: t.purchaseId,
+            purchaseStatus: t.purchaseId
+              ? (statusByPurchase.get(t.purchaseId) ?? null)
+              : null,
           })),
           purchaseCount: rafflePurchases.length,
         };
