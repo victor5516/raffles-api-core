@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { EntityManager, Brackets } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
@@ -24,7 +25,28 @@ export interface PurchaseVerificationResult {
 export class PurchaseVerificationService {
   private readonly logger = new Logger(PurchaseVerificationService.name);
 
-  constructor(private readonly eventEmitter: EventEmitter2) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
+  /**
+   * AI_AUTO_VERIFY: solo `true`, `1` o `yes` (sin distinguir mayúsculas) habilitan
+   * que el webhook marque pagos como verificados y pueda pasar la compra a VERIFIED.
+   * Cualquier otro valor, cadena vacía o variable ausente → tras un pre-chequeo IA
+   * exitoso la compra va a revisión manual (sin `verificationSource = AI`).
+   */
+  private isAiAutoVerifyEnabled(): boolean {
+    const raw = this.configService.get<string>('AI_AUTO_VERIFY');
+    if (raw === undefined || raw === null) {
+      return false;
+    }
+    const v = String(raw).trim().toLowerCase();
+    if (!v) {
+      return false;
+    }
+    return v === 'true' || v === '1' || v === 'yes';
+  }
 
   /**
    * Procesa el resultado de IA para una compra existente.
@@ -321,6 +343,18 @@ export class PurchaseVerificationService {
     // =================================================================
     // FASE 6: APROBACIÓN Y ACTUALIZACIÓN
     // =================================================================
+
+    if (!this.isAiAutoVerifyEnabled()) {
+      const saved = await this.handleManualReview(
+        manager,
+        purchase,
+        'IA: Pre-chequeo OK — la extracción coincide en referencia y monto con lo esperado. Pendiente verificación manual.',
+      );
+      return {
+        purchase: saved,
+        action: 'MANUAL_REVIEW',
+      };
+    }
 
     // Actualizamos el array de pagos
     if (matchedPaymentIndex >= 0) {
